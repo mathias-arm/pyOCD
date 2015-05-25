@@ -21,6 +21,7 @@ from ..transport.cmsis_dap import (DP_REG, AP_REG)
 from ..transport.transport import Transport
 from ..gdbserver import signals
 from ..utility import conversion
+from ..coresight import (dap, ap)
 import logging
 import struct
 
@@ -39,15 +40,6 @@ CORE_TYPE_NAME = {
                  ARM_CortexM4 : "Cortex-M4",
                  ARM_CortexM0p : "Cortex-M0+"
                }
-
-AHB_IDR_TO_WRAP_SIZE = {
-    0x24770011 : 0x1000,    # Used on m4 & m3 - Documented in arm_cortexm4_processor_trm_100166_0001_00_en.pdf
-                            #                   and arm_cortexm3_processor_trm_100165_0201_00_en.pdf
-    0x44770001 : 0x400,     # Used on m1 - Documented in DDI0413D_cortexm1_r1p0_trm.pdf
-    0x04770031 : 0x400,     # Used on m0+? at least on KL25Z, KL46, LPC812
-    0x04770021 : 0x400,     # Used on m0? used on nrf51, lpc11u24
-    0x74770001 : 0x400,     # Used on m0+ on KL28Z
-    }
 
 WATCH_TYPE_TO_FUNCT = {
                         Target.WATCHPOINT_READ: 5,
@@ -353,35 +345,21 @@ class CortexM(Target):
         self.core_type = 0
         self.has_fpu = False
         self.part_number = self.__class__.__name__
+        self.dp = dap.DebugPort(transport)
+        self.ap = ap.AHB_AP(self.dp, 0)
 
     def init(self, initial_setup=True, bus_accessible=True):
         """
         Cortex M initialization
         """
         if initial_setup:
+            self.dp.init()
+            self.ap.init()
+
             self.idcode = self.readIDCode()
+
             # select bank 0 (to access DRW and TAR)
-            self.transport.writeDP(DP_REG['SELECT'], 0)
-            self.transport.writeDP(DP_REG['CTRL_STAT'], CortexM.CSYSPWRUPREQ | CortexM.CDBGPWRUPREQ)
-
-            while True:
-                r = self.transport.readDP(DP_REG['CTRL_STAT'])
-                if (r & (CortexM.CDBGPWRUPACK | CortexM.CSYSPWRUPACK)) == (CortexM.CDBGPWRUPACK | CortexM.CSYSPWRUPACK):
-                    break
-
-            self.transport.writeDP(DP_REG['CTRL_STAT'], CortexM.CSYSPWRUPREQ | CortexM.CDBGPWRUPREQ | CortexM.TRNNORMAL | CortexM.MASKLANE)
-            self.transport.writeDP(DP_REG['SELECT'], 0)
-
-            ahb_idr = self.transport.readAP(AP_REG['IDR'])
-            if ahb_idr in AHB_IDR_TO_WRAP_SIZE:
-                self.auto_increment_page_size = AHB_IDR_TO_WRAP_SIZE[ahb_idr]
-            else:
-                # If unknown use the smallest size supported by all targets.
-                # A size smaller than the supported size will decrease performance
-                # due to the extra address writes, but will not create any
-                # read/write errors.
-                auto_increment_page_size = 0x400
-                logging.warning("Unknown AHB IDR: 0x%x" % ahb_idr)
+            self.dp.powerUpDebug()
 
         if bus_accessible:
             if self.halt_on_connect:
@@ -495,7 +473,7 @@ class CortexM(Target):
         return the IDCODE of the core
         """
         if self.idcode == 0:
-            self.idcode = self.transport.readDP(DP_REG['IDCODE'])
+            self.idcode = self.dp.readReg(DP_REG['IDCODE'])
         return self.idcode
 
     def writeMemory(self, addr, value, transfer_size=32):
@@ -503,7 +481,7 @@ class CortexM(Target):
         write a memory location.
         By default the transfer size is a word
         """
-        self.transport.writeMem(addr, value, transfer_size)
+        self.ap.writeMemory(addr, value, transfer_size)
         return
 
     def write32(self, addr, value):
@@ -603,81 +581,20 @@ class CortexM(Target):
         """
         write a block of unaligned bytes in memory.
         """
-        size = len(data)
-        idx = 0
-
-        #try to write 8 bits data
-        if (size > 0) and (addr & 0x01):
-#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
-            self.writeMemory(addr, data[idx], 8)
-            size -= 1
-            addr += 1
-            idx += 1
-
-        # try to write 16 bits data
-        if (size > 1) and (addr & 0x02):
-#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
-            self.writeMemory(addr, data[idx] | (data[idx + 1] << 8), 16)
-            size -= 2
-            addr += 2
-            idx += 2
-
-        # write aligned block of 32 bits
-        if (size >= 4):
-            #logging.debug("write blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
-            data32 = conversion.byteListToU32leList(data[idx:idx + (size & ~0x03)])
-            self.writeBlockMemoryAligned32(addr, data32)
-            addr += size & ~0x03
-            idx += size & ~0x03
-            size -= size & ~0x03
-
-        # try to write 16 bits data
-        if (size > 1):
-#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
-            self.writeMemory(addr, data[idx] | (data[idx + 1] << 8), 16)
-            size -= 2
-            addr += 2
-            idx += 2
-
-        #try to write 8 bits data
-        if (size > 0):
-#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
-            self.writeMemory(addr, data[idx], 8)
-            size -= 1
-            addr += 1
-            idx += 1
-
-        return
+        self.ap.writeBlockMemoryUnaligned8(addr, data)
 
     def writeBlockMemoryAligned32(self, addr, data):
         """
         write a block of aligned words in memory.
         """
-        size = len(data)
-        while size > 0:
-            n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
-            if size * 4 < n:
-                n = (size * 4) & 0xfffffffc
-            self.transport.writeBlock32(addr, data[:n / 4])
-            data = data[n / 4:]
-            size -= n / 4
-            addr += n
-        return
+        self.ap.writeBlockMemoryAligned32(addr, data)
 
     def readBlockMemoryAligned32(self, addr, size):
         """
         read a block of aligned words in memory. Returns
         an array of word values
         """
-        resp = []
-        while size > 0:
-            n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
-            if size * 4 < n:
-                n = (size * 4) & 0xfffffffc
-            resp += self.transport.readBlock32(addr, n / 4)
-            size -= n / 4
-            addr += n
-        return resp
+        return self.ap.readBlockMemoryAligned32(addr, size)
 
     def halt(self):
         """

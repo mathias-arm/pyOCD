@@ -15,14 +15,7 @@
  limitations under the License.
 """
 
-import board
-import flash
-import gdbserver
-import interface
-import target
-import transport
-import utility
-import coresight
-
-from ._version import version as __version__
+import dap
+import ap
+import rom_table
 

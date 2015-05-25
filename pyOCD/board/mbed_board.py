@@ -29,7 +29,9 @@ class BoardInfo(object):
         self.binary = binary
 
 BOARD_ID_TO_INFO = {
-                        #           Board Name              Target              Test Binary
+                #                   Board Name              Target              Test Binary
+
+                # Freescale Semiconductor
                 "0200": BoardInfo(  "FRDM-KL25Z",           "kl25z",            "l1_kl25z.bin"          ),
                 "0210": BoardInfo(  "FRDM-KL05Z",           "kl05z",            "l1_kl05z.bin",         ),
                 "0220": BoardInfo(  "FRDM-KL46z",           "kl46z",            "l1_kl46z.bin",         ),
@@ -38,18 +40,34 @@ BOARD_ID_TO_INFO = {
                 "0240": BoardInfo(  "FRDM-K64F",            "k64f",             "l1_k64f.bin",          ),
                 "0250": BoardInfo(  "FRDM-KL02Z",           "kl02z",            "l1_kl02z.bin",         ),
                 "0260": BoardInfo(  "FRDM-KL26Z",           "kl26z",            "l1_kl26z.bin",         ),
+                "0270": BoardInfo(  "FRDM-KE02Z",           "ke02z",            "",         ),
+                "0280": BoardInfo(  "TWR-K24F",             "k24f",             "",         ),
                 "0290": BoardInfo(  "FRDM-KL28Z",           "kl28z",            "l1_kl28z.bin",         ),
+                "0300": BoardInfo(  "FRDM-KV11Z",           "kv11z",            "",         ),
+                "0310": BoardInfo(  "TWR-K65F",             "k65f",             "",         ),
+                "0320": BoardInfo(  "FRDM-KW01Z",           "kw01z",            "",         ),
+                "0330": BoardInfo(  "TWR-KV58F220M",        "kv58f",            "l1_kv58f.bin",         ),
+                "0340": BoardInfo(  "TWR-K80F",             "k80f",             "",         ),
+                "0341": BoardInfo(  "FRDM-KV31F",           "kv31f",            "",         ),
+
+                # NXP
                 "1010": BoardInfo(  "mbed NXP LPC1768",     "lpc1768",          "l1_lpc1768.bin",       ),
                 "9004": BoardInfo(  "Arch Pro",             "lpc1768",          "l1_lpc1768.bin",       ),
                 "1040": BoardInfo(  "mbed NXP LPC11U24",    "lpc11u24",         "l1_lpc11u24.bin",      ),
                 "1050": BoardInfo(  "NXP LPC800-MAX",       "lpc800",           "l1_lpc800.bin",        ),
+                "1600": BoardInfo(  "Bambino 210",          "lpc4330",          "l1_lpc4330.bin",       ),
+                "1605": BoardInfo(  "Bambino 210E",         "lpc4330",          "l1_lpc4330.bin",       ),
+
+                # Nordic Semi
                 "1070": BoardInfo(  "nRF51822-mKIT",        "nrf51822",         "l1_nrf51822.bin",      ),
                 "9009": BoardInfo(  "Arch BLE",             "nrf51822",         "l1_nrf51822.bin",      ),
                 "9012": BoardInfo(  "Seeed Tiny BLE",       "nrf51822",         "l1_nrf51822.bin",      ),
+
+                # ST Micro
                 "1080": BoardInfo(  "DT01 + MB2001",        "stm32f103rc",      "l1_stm32f103rc.bin",   ),
                 "1090": BoardInfo(  "DT01 + MB00xx",        "stm32f051",        "l1_stm32f051.bin",     ),
-                "1600": BoardInfo(  "Bambino 210",          "lpc4330",          "l1_lpc4330.bin",       ),
-                "1605": BoardInfo(  "Bambino 210E",         "lpc4330",          "l1_lpc4330.bin",       ),
+
+                # Maxim
                 "0400": BoardInfo(  "maxwsnenv",            "maxwsnenv",        "l1_maxwsnenv.bin",     ),
                 "0405": BoardInfo(  "max32600mbed",         "max32600mbed",     "l1_max32600mbed.bin",  ),
               }

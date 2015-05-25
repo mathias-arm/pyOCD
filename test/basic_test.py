@@ -68,6 +68,11 @@ def basic_test(board_id, file):
             addr = 0x20000001
             size = 0x502
             addr_flash = 0x10000
+        elif target_type == "kv58f":
+            addr = 0x20000000
+            size = 0x500
+            addr_flash = 0x10010000
+            addr_bin = 0x10000000
         elif target_type == "k22f":
             addr = 0x20000001
             size = 0x502

@@ -101,6 +101,11 @@ def speed_test(board_id):
             ram_size = 0x40000
             rom_start = 0x00000000
             rom_size = 0x100000
+        elif target_type == "kv58f":
+            ram_start = 0x20000000
+            ram_size = 0x20000
+            rom_start = 0x10000000
+            rom_size = 0x100000
         elif target_type == "lpc11u24":
             ram_start = 0x10000000
             ram_size = 0x2000

@@ -25,6 +25,7 @@ import target_kl28z
 import target_kl46z
 import target_k22f
 import target_k64f
+import target_kv58f
 import target_k20d50m
 import target_lpc800
 import target_lpc11u24
@@ -48,6 +49,7 @@ TARGET = {
           'k20d50m': target_k20d50m.K20D50M,
           'k22f': target_k22f.K22F,
           'k64f': target_k64f.K64F,
+          'kv58f': target_kv58f.KV58F,
           'lpc800': target_lpc800.LPC800,
           'lpc11u24': target_lpc11u24.LPC11U24,
           'lpc1768': target_lpc1768.LPC1768,

@@ -214,10 +214,14 @@ class Flash(object):
         info = fb.program(chip_erase, progress_cb, smart_flash)
         return info
 
-    def flashBinary(self, path_file, flashPtr = 0x0000000, smart_flash = True, chip_erase = None, progress_cb = None):
+    def flashBinary(self, path_file, flashPtr = None, smart_flash = True, chip_erase = None, progress_cb = None):
         """
         Flash a binary
         """
+        if flashPtr is None:
+            info = self.getFlashInfo()
+            flashPtr = info.rom_start
+
         f = open(path_file, "rb")
 
         with open(path_file, "rb") as f:

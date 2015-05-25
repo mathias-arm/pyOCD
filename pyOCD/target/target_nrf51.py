@@ -15,7 +15,8 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from ..coresight.cortex_m import CortexM
+from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
@@ -23,7 +24,7 @@ import logging
 RESET = 0x40000544
 RESET_ENABLE = (1 << 0)
 
-class NRF51(CortexM):
+class NRF51(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0,           length=0x40000,      blocksize=0x400, isBootMemory=True),
@@ -32,6 +33,7 @@ class NRF51(CortexM):
 
     def __init__(self, link):
         super(NRF51, self).__init__(link, self.memoryMap)
+        self._svd_location = SVDFile(vendor="Nordic", filename="nrf51.xml", is_local=False)
 
     def resetn(self):
         """

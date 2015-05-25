@@ -15,11 +15,12 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from ..coresight.cortex_m import CortexM
+from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
 
-class LPC800(CortexM):
+class LPC800(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0,           length=0x8000,       blocksize=0x400, isBootMemory=True),
@@ -28,6 +29,7 @@ class LPC800(CortexM):
 
     def __init__(self, link):
         super(LPC800, self).__init__(link, self.memoryMap)
+        self._svd_location = SVDFile(vendor="NXP", filename="LPC800_v0.3.xml", is_local=False)
 
     def resetStopOnReset(self, software_reset=None, map_to_user=True):
         CortexM.resetStopOnReset(self, software_reset)

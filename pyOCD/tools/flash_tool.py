@@ -45,7 +45,10 @@ board = None
 
 supported_formats = ['bin', 'hex']
 supported_targets = pyOCD.target.TARGET.keys()
-supported_targets.remove('cortex_m')  # No generic programming
+try:
+    supported_targets.remove('cortex_m')  # No generic programming
+except:
+    pass
 
 debug_levels = LEVELS.keys()
 

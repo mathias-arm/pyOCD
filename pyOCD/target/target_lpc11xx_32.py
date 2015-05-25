@@ -15,10 +15,10 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
-class LPC11XX_32(CortexM):
+class LPC11XX_32(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0,           length=0x8000,       blocksize=0x1000, isBootMemory=True),

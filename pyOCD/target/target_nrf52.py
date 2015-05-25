@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
@@ -23,7 +23,7 @@ import logging
 RESET = 0x40000544
 RESET_ENABLE = (1 << 0)
 
-class NRF52(CortexM):
+class NRF52(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0x0,         length=0x80000,      blocksize=0x1000, isBootMemory=True),

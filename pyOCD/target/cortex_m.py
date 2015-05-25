@@ -69,6 +69,7 @@ ARM_CortexM0 = 0xC20
 ARM_CortexM1 = 0xC21
 ARM_CortexM3 = 0xC23
 ARM_CortexM4 = 0xC24
+ARM_CortexM7 = 0xC27
 ARM_CortexM0p = 0xC60
 
 # User-friendly names for core types.
@@ -77,6 +78,7 @@ CORE_TYPE_NAME = {
                  ARM_CortexM1 : "Cortex-M1",
                  ARM_CortexM3 : "Cortex-M3",
                  ARM_CortexM4 : "Cortex-M4",
+                 ARM_CortexM7 : "Cortex-M7",
                  ARM_CortexM0p : "Cortex-M0+"
                }
 
@@ -121,6 +123,8 @@ DBGKEY = (0xA05F << 16)
 # FPB (breakpoint)
 FP_CTRL = (0xE0002000)
 FP_CTRL_KEY = (1 << 1)
+FP_CTRL_REV_MASK = 0xf0000000
+FP_CTRL_REV_SHIFT = 28
 FP_COMP0 = (0xE0002008)
 
 # DWT (data watchpoint & trace)
@@ -333,6 +337,7 @@ class CortexM(Target):
         self.num_breakpoint_used = 0
         self.nb_lit = 0
         self.fpb_enabled = False
+        self.fpb_rev = 1
         self.watchpoints = []
         self.watchpoint_used = 0
         self.dwt_configured = False
@@ -440,6 +445,9 @@ class CortexM(Target):
         """
         # setup FPB (breakpoint)
         fpcr = self.readMemory(FP_CTRL)
+        self.fp_rev = 1 + ((fpcr & FP_CTRL_REV_MASK) >> FP_CTRL_REV_SHIFT)
+        if self.fp_rev not in (1, 2):
+            logging.warning("Unknown FPB version %d", self.fp_rev)
         self.nb_code = ((fpcr >> 8) & 0x70) | ((fpcr >> 4) & 0xF)
         self.nb_lit = (fpcr >> 7) & 0xf
         logging.info("%d hardware breakpoints, %d literal comparators", self.nb_code, self.nb_lit)
@@ -949,10 +957,16 @@ class CortexM(Target):
         for bp in self.breakpoints:
             if not bp.enabled:
                 bp.enabled = True
-                bp_match = (1 << 30)
-                if addr & 0x2:
-                    bp_match = (2 << 30)
-                self.writeMemory(bp.comp_register_addr, addr & 0x1ffffffc | bp_match | 1)
+                comp = 0
+                if self.fp_rev == 1:
+                    bp_match = (1 << 30)
+                    if addr & 0x2:
+                        bp_match = (2 << 30)
+                    comp = addr & 0x1ffffffc | bp_match | 1
+                elif self.fp_rev == 2:
+                    comp = (addr & 0xfffffffe) | 1
+                self.writeMemory(bp.comp_register_addr, comp)
+                logging.debug("BP: wrote 0x%08x to comp @ 0x%08x", comp, bp.comp_register_addr)
                 bp.addr = addr
                 self.num_breakpoint_used += 1
                 return True

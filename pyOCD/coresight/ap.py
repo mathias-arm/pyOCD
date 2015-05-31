@@ -126,7 +126,7 @@ class MEM_AP(AccessPort):
         # try to read 8bits data
         if (size > 0) and (addr & 0x01):
             mem = self.readMemory(addr, 8)
-            logging.debug("get 1 byte at %s: 0x%X", hex(addr), mem)
+#             logging.debug("get 1 byte at %s: 0x%X", hex(addr), mem)
             res.append(mem)
             size -= 1
             addr += 1
@@ -134,7 +134,7 @@ class MEM_AP(AccessPort):
         # try to read 16bits data
         if (size > 1) and (addr & 0x02):
             mem = self.readMemory(addr, 16)
-            logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
+#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
             res.append(mem & 0xff)
             res.append((mem >> 8) & 0xff)
             size -= 2
@@ -150,7 +150,7 @@ class MEM_AP(AccessPort):
 
         if (size > 1):
             mem = self.readMemory(addr, 16)
-            logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
+#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
             res.append(mem & 0xff)
             res.append((mem >> 8) & 0xff)
             size -= 2
@@ -158,7 +158,7 @@ class MEM_AP(AccessPort):
 
         if (size > 0):
             mem = self.readMemory(addr, 8)
-            logging.debug("get 1 byte remaining at %s: 0x%X", hex(addr), mem)
+#             logging.debug("get 1 byte remaining at %s: 0x%X", hex(addr), mem)
             res.append(mem)
             size -= 1
             addr += 1
@@ -174,7 +174,7 @@ class MEM_AP(AccessPort):
 
         #try to write 8 bits data
         if (size > 0) and (addr & 0x01):
-            logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
+#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
             self.writeMemory(addr, data[idx], 8)
             size -= 1
             addr += 1
@@ -182,7 +182,7 @@ class MEM_AP(AccessPort):
 
         # try to write 16 bits data
         if (size > 1) and (addr & 0x02):
-            logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
+#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
             self.writeMemory(addr, data[idx] | (data[idx+1] << 8), 16)
             size -= 2
             addr += 2
@@ -199,7 +199,7 @@ class MEM_AP(AccessPort):
 
         # try to write 16 bits data
         if (size > 1):
-            logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
+#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
             self.writeMemory(addr, data[idx] | (data[idx+1] << 8), 16)
             size -= 2
             addr += 2
@@ -207,7 +207,7 @@ class MEM_AP(AccessPort):
 
         #try to write 8 bits data
         if (size > 0):
-            logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
+#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
             self.writeMemory(addr, data[idx], 8)
             size -= 1
             addr += 1

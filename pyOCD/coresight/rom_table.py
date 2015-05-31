@@ -48,8 +48,11 @@ class CoreSightComponent(object):
         self.ap = ap
         self.address = top_addr
         self.top_address = top_addr
+        self.component_class = 0
         self.cidr = 0
         self.pidr = 0
+        self.devtype = 0
+        self.devid = 0
         self.count_4kb = 0
 
     def read_id_registers(self):
@@ -59,7 +62,6 @@ class CoreSightComponent(object):
 
         self.component_class = (self.cidr & CIDR_COMPONENT_CLASS_MASK) >> CIDR_COMPONENT_CLASS_SHIFT
         self.is_rom_table = (self.component_class == CIDR_ROM_TABLE_CLASS)
-        print "@%08x: cidr=%x, pidr=%x, class=%d" % (self.address, self.cidr, self.pidr, self.component_class)
 
         self.count_4kb = 1 << ((self.pidr & PIDR_4KB_COUNT_MASK) >> PIDR_4KB_COUNT_SHIFT)
 #         if self.count_4kb > 1:
@@ -68,7 +70,6 @@ class CoreSightComponent(object):
         if self.component_class == CIDR_CORESIGHT_CLASS:
             self.devtype = self.ap.read32(self.top_address + DEVTYPE)
             self.devid = self.ap.read32(self.top_address + DEVID)
-            print "    devtype=%x, devid=%x" % (self.devtype, self.devid)
 
     def read_id_register_set(self, offset):
         result = 0
@@ -77,12 +78,21 @@ class CoreSightComponent(object):
             result |= (value & 0xff) << (i * 8)
         return result
 
+    def __str__(self):
+        if self.component_class == CIDR_CORESIGHT_CLASS:
+            return "<%08x: cidr=%x, pidr=%x, class=%d, devtype=%x, devid=%x>" % (self.address, self.cidr, self.pidr, self.component_class, self.devtype, self.devid)
+        else:
+            return "<%08x: cidr=%x, pidr=%x, class=%d>" % (self.address, self.cidr, self.pidr, self.component_class)
+
+
 class ROMTable(CoreSightComponent):
-    def __init__(self, ap, top_addr=None):
+    def __init__(self, ap, top_addr=None, parent_table=None):
         # If no table address is provided, use the root ROM table for the AP.
         if top_addr is None:
             top_addr = ap.rom_addr
         super(ROMTable, self).__init__(ap, top_addr)
+        self.parent = parent_table
+        self.number = (self.parent.number + 1) if self.parent else 0
         self.entry_size = 0
         self.components = []
 
@@ -110,6 +120,7 @@ class ROMTable(CoreSightComponent):
             return 8
 
     def read_table(self):
+        logging.info("ROM table #%d @ 0x%08x", self.number, self.address)
         self.components = []
         if self.entry_size == 32:
             self.read_table_32()
@@ -158,8 +169,10 @@ class ROMTable(CoreSightComponent):
         cmp = CoreSightComponent(self.ap, address)
         cmp.read_id_registers()
 
+        logging.info("[%d]%s", len(self.components), str(cmp))
+
         if cmp.is_rom_table:
-            cmp = ROMTable(self.ap, address)
+            cmp = ROMTable(self.ap, address, parent_table=self)
             cmp.init()
 
         self.components.append(cmp)

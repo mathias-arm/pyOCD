@@ -15,6 +15,7 @@
  limitations under the License.
 """
 
+from .rom_table import ROMTable
 from ..transport.cmsis_dap import AP_REG
 from ..utility import conversion
 import logging
@@ -40,12 +41,24 @@ class AccessPort(object):
         self.dp = dp
         self.ap_num = ap_num
         self.transport = dp.transport
+        self.idr = 0
+        self.rom_addr = 0
+        self.has_rom_table = False
+        self.rom_table = None
 
-    def init(self):
+    def init(self, bus_accessible=True):
         self.idr = self.readReg(AP_REG['IDR'])
+
+        # Init ROM table
         self.rom_addr = self.readReg(AP_ROM_TABLE_ADDR_REG)
         self.has_rom_table = (self.rom_addr != 0xffffffff) and ((self.rom_addr & AP_ROM_TABLE_ENTRY_PRESENT_MASK) != 0)
         self.rom_addr &= 0xfffffffc # clear format and present bits
+        if self.has_rom_table and bus_accessible:
+            self.initROMTable()
+
+    def initROMTable(self):
+        self.rom_table = ROMTable(self)
+        self.rom_table.init()
 
     def readReg(self, addr):
         return self.transport.readAP((self.ap_num << AP_SEL_SHIFT) | addr)
@@ -54,8 +67,8 @@ class AccessPort(object):
         self.transport.readAP((self.ap_num << AP_SEL_SHIFT) | addr, data)
 
 class MEM_AP(AccessPort):
-    def init(self):
-        super(MEM_AP, self).init()
+    def init(self, bus_accessible=True):
+        super(MEM_AP, self).init(bus_accessible)
 
         if self.idr in AHB_IDR_TO_WRAP_SIZE:
             self.auto_increment_page_size = AHB_IDR_TO_WRAP_SIZE[self.idr]

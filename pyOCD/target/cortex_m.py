@@ -354,7 +354,7 @@ class CortexM(Target):
         """
         if initial_setup:
             self.dp.init()
-            self.ap.init()
+            self.ap.init(False)
 
             self.idcode = self.readIDCode()
 
@@ -362,6 +362,7 @@ class CortexM(Target):
             self.dp.powerUpDebug()
 
         if bus_accessible:
+            self.ap.initROMTable()
             if self.halt_on_connect:
                 self.halt()
             self.setupFPB()

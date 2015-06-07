@@ -533,50 +533,7 @@ class CortexM(Target):
         read a block of unaligned bytes in memory. Returns
         an array of byte values
         """
-        res = []
-
-        # try to read 8bits data
-        if (size > 0) and (addr & 0x01):
-            mem = self.readMemory(addr, 8)
-#             logging.debug("get 1 byte at %s: 0x%X", hex(addr), mem)
-            res.append(mem)
-            size -= 1
-            addr += 1
-
-        # try to read 16bits data
-        if (size > 1) and (addr & 0x02):
-            mem = self.readMemory(addr, 16)
-#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
-            res.append(mem & 0xff)
-            res.append((mem >> 8) & 0xff)
-            size -= 2
-            addr += 2
-
-        # try to read aligned block of 32bits
-        if (size >= 4):
-            #logging.debug("read blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
-            mem = self.readBlockMemoryAligned32(addr, size / 4)
-            res += conversion.u32leListToByteList(mem)
-            size -= 4 * len(mem)
-            addr += 4 * len(mem)
-
-        if (size > 1):
-            mem = self.readMemory(addr, 16)
-#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
-            res.append(mem & 0xff)
-            res.append((mem >> 8) & 0xff)
-            size -= 2
-            addr += 2
-
-        if (size > 0):
-            mem = self.readMemory(addr, 8)
-#             logging.debug("get 1 byte remaining at %s: 0x%X", hex(addr), mem)
-            res.append(mem)
-            size -= 1
-            addr += 1
-
-        return res
-
+        return self.ap.readBlockMemoryUnaligned8(addr, size)
 
     def writeBlockMemoryUnaligned8(self, addr, data):
         """

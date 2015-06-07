@@ -108,6 +108,11 @@ class RomRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, blocksize=0, name='', isBootMemory=False, isPoweredOnBoot=True):
         super(RomRegion, self).__init__(type='rom', start=start, end=end, length=length, name=name, isBootMemory=isBootMemory, isPoweredOnBoot=isPoweredOnBoot)
 
+## @brief Contiguous region of ROM.
+class RomRegion(MemoryRegion):
+    def __init__(self, start=0, end=0, length=0, blocksize=0, name='', isBootMemory=False):
+        super(RomRegion, self).__init__(type='rom', start=start, end=end, length=length, name=name, isBootMemory=isBootMemory)
+
 ## @brief Contiguous region of flash memory.
 class FlashRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, blocksize=0, name='', isBootMemory=False, isPoweredOnBoot=True):

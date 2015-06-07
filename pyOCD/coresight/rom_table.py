@@ -43,6 +43,47 @@ ROM_TABLE_ADDR_OFFSET_NEG_MASK = 0x80000000
 ROM_TABLE_ADDR_OFFSET_MASK = 0xfffff000
 ROM_TABLE_ADDR_OFFSET_SHIFT = 12
 
+# CoreSight devtype
+#  Major Type [3:0]
+#  Minor Type [7:4]
+#
+# CoreSight Major Types
+#  0 = Miscellaneous
+#  1 = Trace Sink
+#  2 = Trace Link
+#  3 = Trace Source
+#  4 = Debug Control
+#  5 = Debug Logic
+#
+# Known devtype values
+#  0x11 = TPIU
+#  0x13 = CPU trace source
+#  0x21 = ETB
+#  0x12 = Trace funnel
+#  0x14 = ECT
+
+# Map from PIDR to component name (eventually class).
+PID_TABLE = {
+        0x4001bb932 : 'MTB-M0+',
+        0x00008e000 : 'MTBDWT',
+        0x4000bb9a6 : 'CTI',
+        0x4000bb4c0 : 'ROM',
+        0x4000bb008 : 'SCS-M0+',
+        0x4000bb00a : 'DWT-M0+',
+        0x4000bb00b : 'BPU',
+        0x4000bb00c : 'SCS-M4',
+        0x4003bb002 : 'DWT',
+        0x4002bb003 : 'FPB',
+        0x4003bb001 : 'ITM',
+        0x4000bb9a1 : 'TPIU-M4',
+        0x4000bb925 : 'ETM-M4',
+        0x4003bb907 : 'ETB',
+        0x4001bb908 : 'CSTF',
+        0x4000bb000 : 'SCS-M3',
+        0x4003bb923 : 'TPIU-M3',
+        0x4003bb924 : 'ETM-M3'
+    }
+
 class CoreSightComponent(object):
     def __init__(self, ap, top_addr):
         self.ap = ap
@@ -54,18 +95,22 @@ class CoreSightComponent(object):
         self.devtype = 0
         self.devid = 0
         self.count_4kb = 0
+        self.name = ''
 
     def read_id_registers(self):
         # Read Component ID and Peripheral ID registers.
         self.cidr = self.read_id_register_set(CIDR0)
         self.pidr = (self.read_id_register_set(PIDR4) << 32) | self.read_id_register_set(PIDR0)
 
+        self.name = PID_TABLE.get(self.pidr, '')
+
         self.component_class = (self.cidr & CIDR_COMPONENT_CLASS_MASK) >> CIDR_COMPONENT_CLASS_SHIFT
         self.is_rom_table = (self.component_class == CIDR_ROM_TABLE_CLASS)
 
         self.count_4kb = 1 << ((self.pidr & PIDR_4KB_COUNT_MASK) >> PIDR_4KB_COUNT_SHIFT)
-#         if self.count_4kb > 1:
-#             self.address = self.top_address - (4096 * (self.count_4kb - 1))
+        if self.count_4kb > 1:
+            address = self.top_address - (4096 * (self.count_4kb - 1))
+#             print "addr=%x" % address
 
         if self.component_class == CIDR_CORESIGHT_CLASS:
             self.devtype = self.ap.read32(self.top_address + DEVTYPE)
@@ -80,9 +125,9 @@ class CoreSightComponent(object):
 
     def __str__(self):
         if self.component_class == CIDR_CORESIGHT_CLASS:
-            return "<%08x: cidr=%x, pidr=%x, class=%d, devtype=%x, devid=%x>" % (self.address, self.cidr, self.pidr, self.component_class, self.devtype, self.devid)
+            return "<%08x:%s cidr=%x, pidr=%x, class=%d, devtype=%x, devid=%x>" % (self.address, self.name, self.cidr, self.pidr, self.component_class, self.devtype, self.devid)
         else:
-            return "<%08x: cidr=%x, pidr=%x, class=%d>" % (self.address, self.cidr, self.pidr, self.component_class)
+            return "<%08x:%s cidr=%x, pidr=%x, class=%d>" % (self.address, self.name, self.cidr, self.pidr, self.component_class)
 
 
 class ROMTable(CoreSightComponent):

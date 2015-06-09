@@ -16,6 +16,7 @@
 """
 
 from ..transport.cmsis_dap import (DP_REG, AP_REG)
+from .ap import AP_SEL_SHIFT
 import logging
 
 DPIDR_MIN_MASK = 0x10000
@@ -70,6 +71,19 @@ class DebugPort(object):
 
     def setClock(self, frequency):
         self.transport.setClock(frequency)
+
+    def findAPs(self):
+        ap_num = 0
+        while True:
+            try:
+                idr = self.transport.readAP((ap_num << AP_SEL_SHIFT) | AP_REG['IDR'])
+                if idr == 0:
+                    break
+                print "AP#%d IDR = 0x%08x" % (ap_num, idr)
+            except Exception, e:
+                print "Exception reading AP#%d IDR" % ap_num, e
+                break
+            ap_num += 1
 
 
 

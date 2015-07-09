@@ -16,7 +16,7 @@
 """
 
 from target_kinetis import Kinetis
-from .memory_map import (FlashRegion, RamRegion, MemoryMap)
+from .memory_map import (FlashRegion, RamRegion, RomRegion, MemoryMap)
 import logging
 from ..transport.transport import Transport
 
@@ -25,6 +25,9 @@ SIM_SDID_KEYATTR_MASK = 0x70
 SIM_SDID_KEYATTR_SHIFT = 4
 
 KEYATTR_DUAL_CORE = 1
+
+RCM_MR = 0x4007f010
+RCM_MR_BOOTROM_MASK = 0x6
 
 class KL28x(Kinetis):
 
@@ -36,9 +39,9 @@ class KL28x(Kinetis):
 
     dualMap = MemoryMap(
         FlashRegion(name='flash', start=0, length=0x80000, blocksize=0x800, isBootMemory=True),
-        RamRegion(name='core1 imem alias', start=0x1d200000, length=0x40000, blocksize=0x800),
+        RomRegion(name='core1 imem alias', start=0x1d200000, length=0x40000),
         RamRegion(name='core0 ram', start=0x1fffa000, length=0x12000),
-        FlashRegion(name='core1 imem', start=0x2d200000, length=0x40000, blocksize=0x800),
+        RomRegion(name='core1 imem', start=0x2d200000, length=0x40000),
         RamRegion(name='core1 dmem', start=0x2d300000, length=0x8000),
         RamRegion(name='usb ram', start=0x40100000, length=0x800)
         )
@@ -59,6 +62,9 @@ class KL28x(Kinetis):
         if self.is_dual_core:
             self.memory_map = self.dualMap
             logging.info("KL28 is dual core")
+
+        # Disable ROM vector table remapping.
+        self.write32(RCM_MR, RCM_MR_BOOTROM_MASK)
 
     def reset(self, software_reset=None):
         try:

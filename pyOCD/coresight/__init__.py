@@ -18,4 +18,8 @@
 import dap
 import ap
 import rom_table
+import cortex_m
+import dwt
+import fpb
+import breakpoints
 

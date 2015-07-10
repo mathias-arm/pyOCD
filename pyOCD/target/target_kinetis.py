@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from ..coresight.cortex_m import CortexM
 from pyOCD.target.target import Target
 import logging
 from time import sleep

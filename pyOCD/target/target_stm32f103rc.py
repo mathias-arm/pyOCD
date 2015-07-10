@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from ..coresight.cortex_m import CortexM
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 

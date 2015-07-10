@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-from cortex_m import CortexM
+from ..coresight.cortex_m import CortexM
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 from pyOCD.transport.cmsis_dap_core import PINS
 import logging

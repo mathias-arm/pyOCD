@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-import cortex_m
+from ..coresight import cortex_m
 import target_kinetis
 import target_kl02z
 import target_kl05z

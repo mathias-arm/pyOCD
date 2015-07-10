@@ -16,12 +16,15 @@
 """
 from xml.etree.ElementTree import (Element, SubElement, tostring)
 
-from .target import Target
+from ..target.target import Target
 from ..transport.cmsis_dap import (DP_REG, AP_REG)
 from ..transport.transport import Transport
 from ..gdbserver import signals
 from ..utility import conversion
-from ..coresight import (dap, ap)
+from .fpb import *
+from .dwt import *
+from .breakpoints import (Breakpoint, Watchpoint)
+from . import (dap, ap)
 import logging
 import struct
 
@@ -134,23 +137,6 @@ CORE_REGISTER = {
                  's30': 0x5e,
                  's31': 0x5f,
                  }
-
-class Breakpoint(object):
-    def __init__(self, comp_register_addr):
-        self.type = Target.BREAKPOINT_HW
-        self.comp_register_addr = comp_register_addr
-        self.enabled = False
-        self.addr = 0
-        self.original_instr = 0
-
-
-class Watchpoint():
-    def __init__(self, comp_register_addr):
-        self.comp_register_addr = comp_register_addr
-        self.addr = 0
-        self.size = 0
-        self.func = 0
-
 
 class CortexM(Target):
 

@@ -313,10 +313,9 @@ class CortexM(Target):
         RegisterInfo('s31',     64,         'float',        'float'),
         ]
 
-    def __init__(self, transport, memoryMap=None):
+    def __init__(self, transport, dp, ap, memoryMap=None):
         super(CortexM, self).__init__(transport, memoryMap)
 
-        self.idcode = 0
         self.hw_breakpoints = []
         self.breakpoints = {}
         self.nb_code = 0
@@ -330,25 +329,24 @@ class CortexM(Target):
         self.arch = 0
         self.core_type = 0
         self.has_fpu = False
-        self.part_number = self.__class__.__name__
-        self.dp = dap.DebugPort(transport)
-        self.ap = ap.AHB_AP(self.dp, 0)
+        self.dp = dp
+        self.ap = ap
 
     def init(self, initial_setup=True, bus_accessible=True):
         """
         Cortex M initialization
         """
-        if initial_setup:
-            self.dp.init()
-            self.ap.init(False)
+#         if initial_setup:
+#             self.dp.init()
+#             self.ap.init(False)
 
-            self.idcode = self.readIDCode()
+#             self.idcode = self.readIDCode()
 
             # select bank 0 (to access DRW and TAR)
-            self.dp.powerUpDebug()
+#             self.dp.powerUpDebug()
 
         if bus_accessible:
-            self.ap.initROMTable()
+#             self.ap.initROMTable()
             if self.halt_on_connect:
                 self.halt()
             self.setupFPB()
@@ -449,19 +447,11 @@ class CortexM(Target):
             self.writeMemory(CortexM.DWT_COMP_BASE + CortexM.DWT_COMP_BLOCK_SIZE * i + CortexM.DWT_FUNCTION_OFFSET, 0)
         self.dwt_configured = True
 
-    def info(self, request):
-        return self.transport.info(request)
-
-    def flush(self):
-        self.transport.flush()
-
     def readIDCode(self):
         """
         return the IDCODE of the core
         """
-        if self.idcode == 0:
-            self.idcode = self.dp.readReg(DP_REG['IDCODE'])
-        return self.idcode
+        return self.dp.dpidr
 
     def writeMemory(self, addr, value, transfer_size=32):
         """
@@ -469,50 +459,13 @@ class CortexM(Target):
         By default the transfer size is a word
         """
         self.ap.writeMemory(addr, value, transfer_size)
-        return
-
-    def write32(self, addr, value):
-        """
-        Shorthand to write a 32-bit word.
-        """
-        self.writeMemory(addr, value, 32)
-
-    def write16(self, addr, value):
-        """
-        Shorthand to write a 16-bit halfword.
-        """
-        self.writeMemory(addr, value, 16)
-
-    def write8(self, addr, value):
-        """
-        Shorthand to write a byte.
-        """
-        self.writeMemory(addr, value, 8)
 
     def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
         """
         read a memory location. By default, a word will
         be read
         """
-        return self.transport.readMem(addr, transfer_size, mode)
-
-    def read32(self, addr):
-        """
-        Shorthand to read a 32-bit word.
-        """
-        return self.readMemory(addr, 32)
-
-    def read16(self, addr):
-        """
-        Shorthand to read a 16-bit halfword.
-        """
-        return self.readMemory(addr, 16)
-
-    def read8(self, addr):
-        """
-        Shorthand to read a byte.
-        """
-        return self.readMemory(addr, 8)
+        return self.ap.readMemory(addr, transfer_size, mode)
 
     def readBlockMemoryUnaligned8(self, addr, size):
         """
@@ -545,8 +498,7 @@ class CortexM(Target):
         halt the core
         """
         self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN | CortexM.C_HALT)
-        self.flush()
-        return
+        self.dp.flush()
 
     def step(self, disable_interrupts=True):
         """
@@ -584,8 +536,7 @@ class CortexM(Target):
             # Unmask interrupts - C_HALT must be set when changing to C_MASKINTS
             self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN | CortexM.C_HALT)
 
-        self.flush()
-        return
+        self.dp.flush()
 
     def clearDebugCauseBits(self):
         self.writeMemory(CortexM.DFSR, CortexM.DFSR_DWTTRAP | CortexM.DFSR_BKPT | CortexM.DFSR_HALTED)
@@ -602,9 +553,9 @@ class CortexM(Target):
         if software_reset:
             self.writeMemory(CortexM.NVIC_AIRCR, CortexM.NVIC_AIRCR_VECTKEY | CortexM.NVIC_AIRCR_SYSRESETREQ)
             # Without a flush a transfer error can occur
-            self.flush()
+            self.dp.flush()
         else:
-            self.transport.reset()
+            self.dp.reset()
 
     def resetStopOnReset(self, software_reset=None):
         """
@@ -652,8 +603,7 @@ class CortexM(Target):
             return
         self.clearDebugCauseBits()
         self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN)
-        self.flush()
-        return
+        self.dp.flush()
 
     def findBreakpoint(self, addr):
         return self.breakpoints.get(addr, None)

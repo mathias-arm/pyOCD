@@ -15,6 +15,7 @@
  limitations under the License.
 """
 
+from ..transport.transport import Transport
 
 class Target(object):
 
@@ -53,74 +54,119 @@ class Target(object):
         self.flash = flash
 
     def init(self):
-        return
+        raise NotImplementedError()
 
     def info(self, request):
-        return
+        return self.transport.info(request)
+
+    def flush(self):
+        self.transport.flush()
 
     def readIDCode(self):
-        return
+        raise NotImplementedError()
 
     def halt(self):
-        return
+        raise NotImplementedError()
 
     def step(self):
-        return
+        raise NotImplementedError()
 
     def resume(self):
-        return
+        raise NotImplementedError()
 
     def writeMemory(self, addr, value, transfer_size=32):
-        return
+        raise NotImplementedError()
 
-    def readMemory(self, addr, transfer_size=32):
-        return
+    # @brief Shorthand to write a 32-bit word.
+    def write32(self, addr, value):
+        self.writeMemory(addr, value, 32)
+
+    # @brief Shorthand to write a 16-bit halfword.
+    def write16(self, addr, value):
+        self.writeMemory(addr, value, 16)
+
+    # @brief Shorthand to write a byte.
+    def write8(self, addr, value):
+        self.writeMemory(addr, value, 8)
+
+    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
+        raise NotImplementedError()
+
+    # @brief Shorthand to read a 32-bit word.
+    def read32(self, addr):
+        return self.readMemory(addr, 32)
+
+    # @brief Shorthand to read a 16-bit halfword.
+    def read16(self, addr):
+        return self.readMemory(addr, 16)
+
+    # @brief Shorthand to read a byte.
+    def read8(self, addr):
+        return self.readMemory(addr, 8)
 
     def writeBlockMemoryUnaligned8(self, addr, value):
-        return
+        raise NotImplementedError()
 
     def writeBlockMemoryAligned32(self, addr, data):
-        return
+        raise NotImplementedError()
 
     def readBlockMemoryUnaligned8(self, addr, size):
-        return
+        raise NotImplementedError()
 
     def readBlockMemoryAligned32(self, addr, size):
-        return
+        raise NotImplementedError()
 
     def readCoreRegister(self, id):
-        return
+        raise NotImplementedError()
 
     def writeCoreRegister(self, id):
-        return
+        raise NotImplementedError()
 
     def setBreakpoint(self, addr, type=BREAKPOINT_AUTO):
-        return
+        raise NotImplementedError()
 
     def getBreakpointType(self, addr):
-        return
+        raise NotImplementedError()
 
     def removeBreakpoint(self, addr):
-        return
+        raise NotImplementedError()
 
     def setWatchpoint(self, addr, size, type):
-        return
+        raise NotImplementedError()
 
     def removeWatchpoint(self, addr, size, type):
-        return
+        raise NotImplementedError()
 
     def reset(self):
-        return
+        raise NotImplementedError()
+
+    def resetStopOnReset(self, software_reset=None):
+        raise NotImplementedError()
+
+    def setTargetState(self, state):
+        raise NotImplementedError()
 
     def getState(self):
-        return
+        raise NotImplementedError()
 
     def getMemoryMap(self):
         return self.memory_map
 
+    def setVectorCatchFault(self, enable):
+        raise NotImplementedError()
+
+    def getVectorCatchFault(self):
+        raise NotImplementedError()
+
+    def setVectorCatchReset(self, enable):
+        raise NotImplementedError()
+
+    def getVectorCatchReset(self):
+        raise NotImplementedError()
+
     # GDB functions
     def getTargetXML(self):
-        return ''
+        raise NotImplementedError()
 
     def getMemoryMapXML(self):
         if self.memory_map:
@@ -131,13 +177,13 @@ class Target(object):
             return None
 
     def getRegisterContext(self):
-        return ''
+        raise NotImplementedError()
 
     def setRegisterContext(self, data):
-        return
+        raise NotImplementedError()
 
     def setRegister(self, reg, data):
-        return
+        raise NotImplementedError()
 
     def getTResponse(self, gdbInterrupt=False):
-        return ''
+        raise NotImplementedError()

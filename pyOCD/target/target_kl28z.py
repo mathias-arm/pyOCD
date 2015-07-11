@@ -18,6 +18,8 @@
 from target_kinetis import Kinetis
 from .memory_map import (FlashRegion, RamRegion, RomRegion, MemoryMap)
 import logging
+from ..coresight import ap
+from ..coresight.cortex_m import CortexM
 from ..transport.transport import Transport
 
 SIM_SDID = 0x40075024
@@ -52,7 +54,8 @@ class KL28x(Kinetis):
         self.is_dual_core = False
 
     def init(self):
-        super(KL28x, self).init()
+#         super(KL28x, self).init()
+        Kinetis.init(self)
 
         # Check if this is the dual core part.
         sdid = self.readMemory(SIM_SDID)
@@ -62,6 +65,16 @@ class KL28x(Kinetis):
         if self.is_dual_core:
             self.memory_map = self.dualMap
             logging.info("KL28 is dual core")
+
+            # Add second core's AHB-AP.
+            self.core1_ap = ap.AHB_AP(self.dp, 2)
+            self.aps.append(self.core1_ap)
+            self.core1_ap.init(True)
+
+            # Add second core. It is held in reset until released by software.
+            self.core1 = CortexM(self.transport, self.dp, self.core1_ap, self.memory_map)
+            self.cores.append(self.core1)
+            self.core1.init(bus_accessible=True)
 
         # Disable ROM vector table remapping.
         self.write32(RCM_MR, RCM_MR_BOOTROM_MASK)

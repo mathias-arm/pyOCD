@@ -40,6 +40,10 @@ WRITE = 0 << 1
 VALUE_MATCH = 1 << 4
 MATCH_MASK = 1 << 5
 
+A32 = 0x0c
+
+APSEL = 0xff000000
+APSEL_SHIFT = 24
 APBANKSEL = 0x000000f0
 
 # AP Control and Status Word definitions
@@ -86,7 +90,7 @@ class CMSIS_DAP(Transport):
         self.protocol = CMSIS_DAP_Protocol(interface)
         self.packet_max_count = 0
         self.packet_max_size = 0
-        self.csw = -1
+        self.csw = {}
         self.dp_select = -1
         self.deferred_transfer = False
         self.request_list = []
@@ -155,8 +159,8 @@ class CMSIS_DAP(Transport):
         elif (self.mode == DAP_MODE_JTAG):
             self.writeDP(DP_REG['CTRL_STAT'], CTRLSTAT_STICKYERR)
 
-    def writeMem(self, addr, data, transfer_size=32):
-        self.writeAP(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
+    def writeMem(self, addr, data, transfer_size=32, ap_num=0):
+        self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
 
         if transfer_size == 8:
             data = data << ((addr & 0x03) << 3)
@@ -170,10 +174,10 @@ class CMSIS_DAP(Transport):
         if not self.deferred_transfer:
             self.flush()
 
-    def readMem(self, addr, transfer_size=32, mode=Transport.READ_NOW):
+    def readMem(self, addr, transfer_size=32, mode=Transport.READ_NOW, ap_num=0):
         res = None
         if mode in (Transport.READ_START, Transport.READ_NOW):
-            self.writeAP(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
+            self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
             self._write(WRITE | AP_ACC | AP_REG['TAR'], addr)
             self._write(READ | AP_ACC | AP_REG['DRW'])
 
@@ -198,10 +202,10 @@ class CMSIS_DAP(Transport):
         return res
 
     # write aligned word ("data" are words)
-    def writeBlock32(self, addr, data):
+    def writeBlock32(self, addr, data, ap_num=0):
         # put address in TAR
-        self.writeAP(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
-        self.writeAP(AP_REG['TAR'], addr)
+        self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['TAR'], addr)
         try:
             self._transferBlock(len(data), WRITE | AP_ACC | AP_REG['DRW'], data)
         except Transport.TransferError:
@@ -212,10 +216,10 @@ class CMSIS_DAP(Transport):
             self.flush()
 
     # read aligned word (the size is in words)
-    def readBlock32(self, addr, size):
+    def readBlock32(self, addr, size, ap_num=0):
         # put address in TAR
-        self.writeAP(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
-        self.writeAP(AP_REG['TAR'], addr)
+        self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.writeAP((ap_num << APSEL_SHIFT) | AP_REG['TAR'], addr)
         data = []
         try:
             resp = self._transferBlock(size, READ | AP_ACC | AP_REG['DRW'])
@@ -236,7 +240,7 @@ class CMSIS_DAP(Transport):
     def readDP(self, addr, mode=Transport.READ_NOW):
         res = None
         if mode in (Transport.READ_START, Transport.READ_NOW):
-            self._write(READ | DP_ACC | (addr & 0x0c))
+            self._write(READ | DP_ACC | (addr & A32))
 
         if mode in (Transport.READ_NOW, Transport.READ_END):
             resp = self._read()
@@ -256,10 +260,10 @@ class CMSIS_DAP(Transport):
     def writeDP(self, addr, data):
         if addr == DP_REG['SELECT']:
             if data == self.dp_select:
-                return
+                return True
             self.dp_select = data
 
-        self._write(WRITE | DP_ACC | (addr & 0x0c), data)
+        self._write(WRITE | DP_ACC | (addr & A32), data)
 
         # If not in deferred mode flush after calls to _read or _write
         if not self.deferred_transfer:
@@ -267,16 +271,17 @@ class CMSIS_DAP(Transport):
         return True
 
     def writeAP(self, addr, data):
-        ap_sel = addr & 0xff000000
+        ap_sel = addr & APSEL
         bank_sel = addr & APBANKSEL
         self.writeDP(DP_REG['SELECT'], ap_sel | bank_sel)
 
-        if addr == AP_REG['CSW']:
-            if data == self.csw:
-                return
-            self.csw = data
+        if (addr & (APBANKSEL | A32)) == AP_REG['CSW']:
+            if self.csw.has_key(ap_sel) and data == self.csw[ap_sel]:
+                return True
+            self.csw[ap_sel] = data
 
-        self._write(WRITE | AP_ACC | (addr & 0x0c), data)
+        self._write(WRITE | AP_ACC | (addr & A32), data)
+
         # If not in deferred mode flush after calls to _read or _write
         if not self.deferred_transfer:
             self.flush()
@@ -286,11 +291,11 @@ class CMSIS_DAP(Transport):
     def readAP(self, addr, mode=Transport.READ_NOW):
         res = None
         if mode in (Transport.READ_START, Transport.READ_NOW):
-            ap_sel = addr & 0xff000000
+            ap_sel = addr & APSEL
             bank_sel = addr & APBANKSEL
 
             self.writeDP(DP_REG['SELECT'], ap_sel | bank_sel)
-            self._write(READ | AP_ACC | (addr & 0x0c))
+            self._write(READ | AP_ACC | (addr & A32))
 
         if mode in (Transport.READ_NOW, Transport.READ_END):
             resp = self._read()

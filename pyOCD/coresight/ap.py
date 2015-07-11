@@ -17,8 +17,14 @@
 
 from .rom_table import ROMTable
 from ..transport.cmsis_dap import AP_REG
+from ..transport.transport import Transport
 from ..utility import conversion
 import logging
+
+AP_CSW = 0x00
+AP_TAR = 0x04
+AP_DRW = 0x0C
+AP_IDR = 0xFC
 
 AP_SEL_SHIFT = 24
 
@@ -47,7 +53,7 @@ class AccessPort(object):
         self.rom_table = None
 
     def init(self, bus_accessible=True):
-        self.idr = self.readReg(AP_REG['IDR'])
+        self.idr = self.readReg(AP_IDR)
 
         # Init ROM table
         self.rom_addr = self.readReg(AP_ROM_TABLE_ADDR_REG)
@@ -83,8 +89,8 @@ class MEM_AP(AccessPort):
     ## @brief Write a single memory location.
     #
     # By default the transfer size is a word
-    def writeMemory(self, addr, value, transfer_size = 32):
-        self.transport.writeMem(addr, value, transfer_size)
+    def writeMemory(self, addr, value, transfer_size=32):
+        self.transport.writeMem(addr, value, transfer_size, ap_num=self.ap_num)
 
     def write32(self, addr, value):
         """
@@ -104,12 +110,12 @@ class MEM_AP(AccessPort):
         """
         self.writeMemory(addr, value, 8)
 
-    def readMemory(self, addr, transfer_size = 32):
+    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
         """
         read a memory location. By default, a word will
         be read
         """
-        return self.transport.readMem(addr, transfer_size)
+        return self.transport.readMem(addr, transfer_size, mode, ap_num=self.ap_num)
 
     def read32(self, addr):
         """
@@ -139,7 +145,6 @@ class MEM_AP(AccessPort):
         # try to read 8bits data
         if (size > 0) and (addr & 0x01):
             mem = self.readMemory(addr, 8)
-#             logging.debug("get 1 byte at %s: 0x%X", hex(addr), mem)
             res.append(mem)
             size -= 1
             addr += 1
@@ -147,7 +152,6 @@ class MEM_AP(AccessPort):
         # try to read 16bits data
         if (size > 1) and (addr & 0x02):
             mem = self.readMemory(addr, 16)
-#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
             res.append(mem & 0xff)
             res.append((mem >> 8) & 0xff)
             size -= 2
@@ -155,15 +159,13 @@ class MEM_AP(AccessPort):
 
         # try to read aligned block of 32bits
         if (size >= 4):
-            #logging.debug("read blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
             mem = self.readBlockMemoryAligned32(addr, size/4)
-            res += conversion.word2byte(mem)
+            res += conversion.u32leListToByteList(mem)
             size -= 4*len(mem)
             addr += 4*len(mem)
 
         if (size > 1):
             mem = self.readMemory(addr, 16)
-#             logging.debug("get 2 bytes at %s: 0x%X", hex(addr), mem)
             res.append(mem & 0xff)
             res.append((mem >> 8) & 0xff)
             size -= 2
@@ -171,7 +173,6 @@ class MEM_AP(AccessPort):
 
         if (size > 0):
             mem = self.readMemory(addr, 8)
-#             logging.debug("get 1 byte remaining at %s: 0x%X", hex(addr), mem)
             res.append(mem)
             size -= 1
             addr += 1
@@ -187,7 +188,6 @@ class MEM_AP(AccessPort):
 
         #try to write 8 bits data
         if (size > 0) and (addr & 0x01):
-#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
             self.writeMemory(addr, data[idx], 8)
             size -= 1
             addr += 1
@@ -195,7 +195,6 @@ class MEM_AP(AccessPort):
 
         # try to write 16 bits data
         if (size > 1) and (addr & 0x02):
-#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
             self.writeMemory(addr, data[idx] | (data[idx+1] << 8), 16)
             size -= 2
             addr += 2
@@ -203,8 +202,7 @@ class MEM_AP(AccessPort):
 
         # write aligned block of 32 bits
         if (size >= 4):
-            #logging.debug("write blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
-            data32 = conversion.byte2word(data[idx:idx + (size & ~0x03)])
+            data32 = conversion.byteListToU32leList(data[idx:idx + (size & ~0x03)])
             self.writeBlockMemoryAligned32(addr, data32)
             addr += size & ~0x03
             idx += size & ~0x03
@@ -212,7 +210,6 @@ class MEM_AP(AccessPort):
 
         # try to write 16 bits data
         if (size > 1):
-#             logging.debug("write 2 bytes at 0x%X: 0x%X", addr, data[idx] | (data[idx+1] << 8))
             self.writeMemory(addr, data[idx] | (data[idx+1] << 8), 16)
             size -= 2
             addr += 2
@@ -220,7 +217,6 @@ class MEM_AP(AccessPort):
 
         #try to write 8 bits data
         if (size > 0):
-#             logging.debug("write 1 byte at 0x%X: 0x%X", addr, data[idx])
             self.writeMemory(addr, data[idx], 8)
             size -= 1
             addr += 1
@@ -235,7 +231,7 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            self.transport.writeBlock32(addr, data[:n/4])
+            self.transport.writeBlock32(addr, data[:n/4], ap_num=self.ap_num)
             data = data[n/4:]
             size -= n/4
             addr += n
@@ -250,7 +246,7 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            resp += self.transport.readBlock32(addr, n/4)
+            resp += self.transport.readBlock32(addr, n/4, ap_num=self.ap_num)
             size -= n/4
             addr += n
         return resp

@@ -79,12 +79,5 @@ class KL28x(Kinetis):
         # Disable ROM vector table remapping.
         self.write32(RCM_MR, RCM_MR_BOOTROM_MASK)
 
-    def reset(self, software_reset=None):
-        try:
-            super(KL28x, self).reset(software_reset)
-        except Transport.TransferError:
-            # KL28 causes a SWD transfer fault for the AIRCR write when
-            # it resets. Just ignore this error.
-            pass
 
 

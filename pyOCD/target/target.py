@@ -122,6 +122,18 @@ class Target(object):
     def writeCoreRegister(self, id):
         raise NotImplementedError()
 
+    def readCoreRegisterRaw(self, reg):
+        raise NotImplementedError()
+
+    def readCoreRegistersRaw(self, reg_list):
+        raise NotImplementedError()
+
+    def writeCoreRegisterRaw(self, reg, data):
+        raise NotImplementedError()
+
+    def writeCoreRegistersRaw(self, reg_list, data_list):
+        raise NotImplementedError()
+
     def setBreakpoint(self, addr, type=BREAKPOINT_AUTO):
         raise NotImplementedError()
 

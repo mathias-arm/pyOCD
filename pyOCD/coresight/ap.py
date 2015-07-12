@@ -70,7 +70,7 @@ class AccessPort(object):
         return self.transport.readAP((self.ap_num << AP_SEL_SHIFT) | addr)
 
     def writeReg(self, addr, data):
-        self.transport.readAP((self.ap_num << AP_SEL_SHIFT) | addr, data)
+        self.transport.writeAP((self.ap_num << AP_SEL_SHIFT) | addr, data)
 
 class MEM_AP(AccessPort):
     def init(self, bus_accessible=True):

@@ -29,10 +29,16 @@ class CoreSightTarget(Target):
         self.cores = []
         self.aps = []
         self.dp = dap.DebugPort(transport)
+        self.selected_core = 0
 
     @property
     def main_core(self):
-        return self.cores[0]
+        return self.cores[self.selected_core]
+
+    def selectCore(self, num):
+        if num >= len(self.cores):
+            raise ValueError("invalid core number")
+        self.selected_core = num
 
     def init(self):
         # Create the DP and turn on debug.
@@ -82,6 +88,18 @@ class CoreSightTarget(Target):
 
     def writeCoreRegister(self, id):
         return self.main_core.writeCoreRegister(id)
+
+    def readCoreRegisterRaw(self, reg):
+        return self.main_core.readCoreRegisterRaw(reg)
+
+    def readCoreRegistersRaw(self, reg_list):
+        return self.main_core.readCoreRegistersRaw(reg_list)
+
+    def writeCoreRegisterRaw(self, reg, data):
+        self.main_core.writeCoreRegisterRaw(reg, data)
+
+    def writeCoreRegistersRaw(self, reg_list, data_list):
+        self.main_core.writeCoreRegistersRaw(reg_list, data_list)
 
     def setBreakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
         return self.main_core.setBreakpoint(addr, type)

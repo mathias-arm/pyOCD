@@ -374,7 +374,7 @@ class CMSIS_DAP(Transport):
                 # Dump any data read
                 self.data_read_list = []
                 # Invalidate cached registers
-                self.csw = -1
+                self.csw = {}
                 self.dp_select = -1
                 # Clear error
                 self.clearStickyErr()

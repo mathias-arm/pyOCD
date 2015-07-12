@@ -551,9 +551,12 @@ class CortexM(Target):
             software_reset = True
 
         if software_reset:
-            self.writeMemory(CortexM.NVIC_AIRCR, CortexM.NVIC_AIRCR_VECTKEY | CortexM.NVIC_AIRCR_SYSRESETREQ)
-            # Without a flush a transfer error can occur
-            self.dp.flush()
+            try:
+                self.writeMemory(CortexM.NVIC_AIRCR, CortexM.NVIC_AIRCR_VECTKEY | CortexM.NVIC_AIRCR_SYSRESETREQ)
+                # Without a flush a transfer error can occur
+                self.dp.flush()
+            except TransferError:
+                pass
         else:
             self.dp.reset()
 

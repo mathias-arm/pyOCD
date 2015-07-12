@@ -241,6 +241,11 @@ class PyOCDConsole(object):
 
     def process_command(self, cmd):
         try:
+            if (cmd.strip())[0] == '$':
+                cmd = cmd[1:].strip()
+                self.tool.handle_python(cmd)
+                return
+
             args = cmd.split()
             cmd = args[0].lower()
             args = args[1:]
@@ -263,13 +268,17 @@ class PyOCDConsole(object):
             # Run command.
             handler = self.tool.command_list[cmd]
             handler(args)
+        except Transport.TransferError:
+            print "Error: transfer failed"
+            traceback.print_exc()
         except ValueError:
             print "Error: invalid argument"
             traceback.print_exc()
-        except Transport.TransferError:
-            print "Error: transfer failed"
         except ToolError as e:
             print "Error:", e
+        except Exception as e:
+            print "Unexpected exception:", e
+            traceback.print_exc()
 
     def show_help(self, args):
         if not args:
@@ -652,6 +661,24 @@ class PyOCDTool(object):
 
     def handle_exit(self, args):
         raise ToolExitException()
+
+    def handle_python(self, args):
+        try:
+            env = {
+                    'board' : self.board,
+                    'target' : self.target,
+                    'transport' : self.transport,
+                    'flash' : self.flash,
+                }
+            result = eval(args, globals(), env)
+            if result is not None:
+                if type(result) is int:
+                    print "0x%08x (%d)" % (result, result)
+                else:
+                    print result
+        except Exception as e:
+            print "Exception while executing expression:", e
+            traceback.print_exc()
 
     def isFlashWrite(self, addr, width, data):
         mem_map = self.board.target.getMemoryMap()

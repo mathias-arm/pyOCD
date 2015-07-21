@@ -448,10 +448,12 @@ class PyOCDTool(object):
         MbedBoard.listConnectedBoards()
 
     def handle_info(self, args):
-        print "Target:    %s" % self.target.part_number
-        print "CPU type:  %s" % pyOCD.target.cortex_m.CORE_TYPE_NAME[self.target.core_type]
-        print "Unique ID: %s" % self.board.getUniqueID()
-        print "Core ID:   0x%08x" % self.target.readIDCode()
+        print "Target:       %s" % self.target.part_number
+        print "Unique ID:    %s" % self.board.getUniqueID()
+        print "DAP IDCODE:   0x%08x" % self.target.readIDCode()
+        print "Cores:        %d" % len(self.target.cores)
+        for i, c in enumerate(self.target.cores):
+            print "Core %d type:  %s" % (i, pyOCD.target.cortex_m.CORE_TYPE_NAME[c.core_type])
 
     def handle_status(self, args):
         if self.target.isLocked():
@@ -459,9 +461,10 @@ class PyOCDTool(object):
         else:
             print "Security:       Unlocked"
         if isinstance(self.target, pyOCD.target.target_kinetis.Kinetis):
-            print "MDM-AP Control: 0x%08x" % self.transport.readAP(target_kinetis.MDM_CTRL)
-            print "MDM-AP Status:  0x%08x" % self.transport.readAP(target_kinetis.MDM_STATUS)
-        print "Core status:    %s" % CORE_STATUS_DESC[self.target.getState()]
+            print "MDM-AP Control: 0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_CTRL)
+            print "MDM-AP Status:  0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_STATUS)
+        for i, c in enumerate(self.target.cores):
+            print "Core %d status:  %s" % (i, CORE_STATUS_DESC[c.getState()])
 
     def handle_reg(self, args):
         # If there are no args, print all register values.

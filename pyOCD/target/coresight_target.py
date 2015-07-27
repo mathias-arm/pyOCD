@@ -79,7 +79,7 @@ class CoreSightTarget(Target):
         self._svd_device = self._svd_location.device
         self._svd_load_thread = None
 
-    def init(self):
+    def init(self, initial_setup=True, bus_accessible=True):
         # Start loading the SVD file
         self.loadSVD()
 
@@ -89,11 +89,11 @@ class CoreSightTarget(Target):
 
         # Create an AHB-AP for the CPU.
         self.aps.append(ap.AHB_AP(self.dp, 0))
-        self.aps[0].init()
+        self.aps[0].init(bus_accessible)
 
         # Create CortexM core.
         self.cores.append(cortex_m.CortexM(self.transport, self.dp, self.aps[0], self.memory_map))
-        self.main_core.init()
+        self.main_core.init(initial_setup=initial_setup, bus_accessible=bus_accessible)
 
     def readIDCode(self):
         return self.dp.dpidr

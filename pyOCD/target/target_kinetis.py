@@ -54,18 +54,11 @@ class Kinetis(CoreSightTarget):
         self.do_auto_unlock = doAutoUnlock
 
     def init(self):
-        self.dp.init()
-        self.dp.powerUpDebug()
-
-        self.aps.append(ap.AHB_AP(self.dp, 0))
-        self.aps[0].init(False)
+        super(Kinetis, self).init(initial_setup=True, bus_accessible=False)
 
         self.mdm_ap = ap.AccessPort(self.dp, 1)
         self.aps.append(self.mdm_ap)
         self.mdm_ap.init(False)
-
-        self.cores.append(CortexM(self.transport, self.dp, self.aps[0], self.memory_map))
-        self.main_core.init(initial_setup=True, bus_accessible=False)
 
         # check MDM-AP ID
         if self.mdm_ap.idr != self.mdm_idr:

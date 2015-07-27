@@ -18,6 +18,22 @@
 from .target import Target
 from ..coresight import (dap, ap, cortex_m)
 from ..transport.transport import Transport
+import threading
+from cmsis_svd.parser import SVDParser
+import logging
+
+class SVDFile(object):
+    def __init__(self, filename=None, vendor=None, is_local=False):
+        self.filename = filename
+        self.vendor = vendor
+        self.is_local = is_local
+        self.device = None
+
+    def load(self):
+        if self.is_local:
+            self.device = SVDParser.for_xml_file(self.filename).get_device()
+        else:
+            self.device = SVDParser.for_packaged_svd(self.vendor, self.filename).get_device()
 
 ##
 # @brief Debug target that uses CoreSight classes.
@@ -30,6 +46,7 @@ class CoreSightTarget(Target):
         self.aps = []
         self.dp = dap.DebugPort(transport)
         self.selected_core = 0
+        self._svd_load_thread = None
 
     @property
     def main_core(self):
@@ -40,7 +57,32 @@ class CoreSightTarget(Target):
             raise ValueError("invalid core number")
         self.selected_core = num
 
+    @property
+    ## @brief Waits for SVD file to complete loading before returning.
+    def svd_device(self):
+        if not self._svd_device and self._svd_load_thread:
+            logging.debug("Waiting for SVD load to complete")
+            self._svd_load_thread.join()
+        return self._svd_device
+
+    def loadSVD(self):
+        if not self._svd_device and self._svd_location:
+            # Spawn thread to load SVD in background.
+            self._svd_load_thread = threading.Thread(target=self._load_svd_thread, name='load-svd')
+            self._svd_load_thread.start()
+
+    ## @brief Thread to read an SVD file in the background.
+    def _load_svd_thread(self):
+        logging.debug("Started loading SVD")
+        self._svd_location.load()
+        logging.debug("Completed loading SVD")
+        self._svd_device = self._svd_location.device
+        self._svd_load_thread = None
+
     def init(self):
+        # Start loading the SVD file
+        self.loadSVD()
+
         # Create the DP and turn on debug.
         self.dp.init()
         self.dp.powerUpDebug()

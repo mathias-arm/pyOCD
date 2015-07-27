@@ -16,6 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import SVDFile
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
@@ -47,6 +48,7 @@ class STM32F051(CortexM):
 
     def __init__(self, transport):
         super(STM32F051, self).__init__(transport, self.memoryMap)
+        self._svd_location = SVDFile(vendor="STMicro", filename="STM32F0xx.svd", is_local=False)
 
     def init(self):
         logging.debug('stm32f051 init')

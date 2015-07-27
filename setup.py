@@ -19,7 +19,7 @@ from setuptools import setup, find_packages
 import sys
 
 setup_requires = ['setuptools_scm!=1.5.3,!=1.5.4']
-install_requires = ['intelhex']
+install_requires = ['intelhex', 'cmsis-svd']
 if sys.platform.startswith('linux'):
     install_requires.extend([
         'pyusb>=1.0.0b2',

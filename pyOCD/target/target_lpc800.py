@@ -16,6 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import SVDFile
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
 
@@ -28,6 +29,7 @@ class LPC800(CortexM):
 
     def __init__(self, transport):
         super(LPC800, self).__init__(transport, self.memoryMap)
+        self._svd_location = SVDFile(vendor="NXP", filename="LPC800_v0.3.xml", is_local=False)
 
     def resetStopOnReset(self, software_reset=None, map_to_user=True):
         CortexM.resetStopOnReset(self, software_reset)

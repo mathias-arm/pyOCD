@@ -21,6 +21,8 @@ import logging
 from ..coresight import ap
 from ..coresight.cortex_m import CortexM
 from ..transport.transport import Transport
+from .coresight_target import SVDFile
+import os.path
 
 SIM_SDID = 0x40075024
 SIM_SDID_KEYATTR_MASK = 0x70
@@ -53,9 +55,11 @@ class KL28x(Kinetis):
         self.mdm_idr = 0x001c0020
         self.is_dual_core = False
 
+        svd_file = os.path.join(os.path.dirname(__file__), 'registers', 'MKL28T7_CORE0.svd')
+        self._svd_location = SVDFile(filename=svd_file, is_local=True)
+
     def init(self):
-#         super(KL28x, self).init()
-        Kinetis.init(self)
+        super(KL28x, self).init()
 
         # Check if this is the dual core part.
         sdid = self.readMemory(SIM_SDID)

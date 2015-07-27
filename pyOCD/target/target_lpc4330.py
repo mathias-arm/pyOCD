@@ -16,6 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import SVDFile
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
 class LPC4330(CortexM):
@@ -31,6 +32,7 @@ class LPC4330(CortexM):
     def __init__(self, transport):
         super(LPC4330, self).__init__(transport, self.memoryMap)
         self.ignoreReset = False
+        self._svd_location = SVDFile(vendor="NXP", filename="LPC43xx_svd_v5.xml", is_local=False)
 
     def setFlash(self, flash):
         self.flash = flash

@@ -30,6 +30,7 @@ from pyOCD.board import MbedBoard
 from pyOCD.target import target_kinetis
 from pyOCD.transport.transport import Transport
 from pyOCD.target.target import Target
+from pyOCD.utility import mask
 
 # Make disasm optional.
 try:
@@ -168,6 +169,16 @@ COMMAND_INFO = {
             },
         }
 
+def hex_width(value, width):
+    if width == 8:
+        return "%02x" % value
+    elif width == 16:
+        return "%04x" % value
+    elif width == 32:
+        return "%08x" % value
+    else:
+        raise ToolError("unrecognized register width (%d)" % reg.size)
+
 def dumpHexData(data, startAddress=0, width=8):
     i = 0
     while i < len(data):
@@ -270,7 +281,7 @@ class PyOCDConsole(object):
             handler(args)
         except Transport.TransferError:
             print "Error: transfer failed"
-            traceback.print_exc()
+#             traceback.print_exc()
         except ValueError:
             print "Error: invalid argument"
             traceback.print_exc()
@@ -397,6 +408,12 @@ class PyOCDTool(object):
             self.transport = self.board.transport
             self.flash = self.board.flash
 
+            self.svd_device = self.target.svd_device
+            self.peripherals = {}
+            if self.svd_device:
+                for p in self.svd_device.peripherals:
+                    self.peripherals[p.name.lower()] = p
+
             # Halt if requested.
             if self.args.halt:
                 self.handle_halt()
@@ -472,14 +489,36 @@ class PyOCDTool(object):
             self.dump_registers()
             return
 
-        reg = args[0].lower()
-        value = self.target.readCoreRegister(reg)
-        if type(value) is int:
-            print "%s = 0x%08x (%d)" % (reg, value, value)
-        elif type(value) is float:
-            print "%s = %g" % (reg, value)
+        if len(args) == 2 and args[0].lower() == '-f':
+            del args[0]
+            show_fields = True
         else:
-            raise ToolError("Unknown register value type")
+            show_fields = False
+
+        reg = args[0].lower()
+        if reg in pyOCD.target.cortex_m.CORE_REGISTER:
+            value = self.target.readCoreRegister(reg)
+            if type(value) is int:
+                print "%s = 0x%08x (%d)" % (reg, value, value)
+            elif type(value) is float:
+                print "%s = %g" % (reg, value)
+            else:
+                raise ToolError("Unknown register value type")
+        else:
+            subargs = reg.split('.')
+            if self.peripherals.has_key(subargs[0]):
+                p = self.peripherals[subargs[0]]
+                if len(subargs) > 1:
+                    r = [x for x in p.registers if x.name.lower() == subargs[1]]
+                    if len(r):
+                        self._dump_peripheral_register(p, r[0], True)
+                    else:
+                        raise ToolError("invalid register '%s' for %s" % (subargs[1], p.name))
+                else:
+                    for r in p.registers:
+                        self._dump_peripheral_register(p, r, show_fields)
+            else:
+                raise ToolError("invalid peripheral '%s'" % (subargs[0]))
 
     def handle_write_reg(self, args):
         if len(args) < 1:
@@ -720,7 +759,16 @@ class PyOCDTool(object):
             value = self.target.readCoreRegister(arg)
             print "%s = 0x%08x" % (arg, value)
         else:
-            value = int(arg, base=0)
+            subargs = arg.split('.')
+            if self.peripherals.has_key(subargs[0]) and len(subargs) > 1:
+                p = self.peripherals[subargs[0]]
+                r = [x for x in p.registers if x.name.lower() == subargs[1]]
+                if len(r):
+                    value = p.base_address + r[0].address_offset
+                else:
+                    raise ToolError("invalid register '%s' for %s" % (subargs[1], p.name))
+            else:
+                value = int(arg, base=0)
 
         if deref:
             value = pyOCD.utility.conversion.byteListToU32leList(self.target.readBlockMemoryUnaligned8(value + offset, 4))[0]
@@ -742,6 +790,30 @@ class PyOCDTool(object):
             print "{:>8} {:#010x} ".format(reg + ':', regValue),
             if i % 3 == 2:
                 print
+
+    def _dump_peripheral_register(self, periph, reg, show_fields):
+        addr = periph.base_address + reg.address_offset
+        value = self.target.readMemory(addr, reg.size)
+        value_str = hex_width(value, reg.size)
+        print "%s.%s @ %08x = %s" % (periph.name, reg.name, addr, value_str)
+
+        if show_fields:
+            for f in reg.fields:
+                if f.is_reserved:
+                    continue
+                msb = f.bit_offset + f.bit_width - 1
+                lsb = f.bit_offset
+                f_value = mask.bfx(value, msb, lsb)
+                if f.bit_width == 1:
+                    bits_str = "%d" % lsb
+                else:
+                    bits_str = "%d:%d" % (msb, lsb)
+                f_value_str = "%x" % f_value
+                digits = (f.bit_width + 3) / 4
+                f_value_str = "0" * (digits - len(f_value_str)) + f_value_str
+                f_value_bin_str = bin(f_value)[2:]
+                f_value_bin_str = "0b" + "0" * (f.bit_width - len(f_value_bin_str)) + f_value_bin_str
+                print "  %s[%s] = %s (%s)" % (f.name, bits_str, f_value_str, f_value_bin_str)
 
     def print_memory_map(self):
         print "Region          Start         End           Blocksize"

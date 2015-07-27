@@ -16,6 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import SVDFile
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
@@ -32,6 +33,7 @@ class NRF51(CortexM):
 
     def __init__(self, transport):
         super(NRF51, self).__init__(transport, self.memoryMap)
+        self._svd_location = SVDFile(vendor="Nordic", filename="nrf51.xml", is_local=False)
 
     def resetn(self):
         """

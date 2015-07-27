@@ -16,6 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import SVDFile
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
 class LPC11U24(CortexM):
@@ -27,6 +28,7 @@ class LPC11U24(CortexM):
 
     def __init__(self, transport):
         super(LPC11U24, self).__init__(transport, self.memoryMap)
+        self._svd_location = SVDFile(vendor="NXP", filename="LPC11Uxx_v7.xml", is_local=False)
 
     def resetStopOnReset(self, software_reset=None, map_to_user=True):
         CortexM.resetStopOnReset(self, software_reset)

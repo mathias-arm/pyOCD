@@ -40,6 +40,12 @@ class Target(object):
         self.part_number = ""
         self.memory_map = memoryMap
         self.halt_on_connect = True
+        self._svd_location = None
+        self._svd_device = None
+
+    @property
+    def svd_device(self):
+        return self._svd_device
 
     def setAutoUnlock(self, doAutoUnlock):
         pass

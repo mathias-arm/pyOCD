@@ -128,8 +128,8 @@ class CoreSightTarget(Target):
     def readCoreRegister(self, id):
         return self.main_core.readCoreRegister(id)
 
-    def writeCoreRegister(self, id):
-        return self.main_core.writeCoreRegister(id)
+    def writeCoreRegister(self, id, data):
+        return self.main_core.writeCoreRegister(id, data)
 
     def readCoreRegisterRaw(self, reg):
         return self.main_core.readCoreRegisterRaw(reg)
@@ -200,4 +200,10 @@ class CoreSightTarget(Target):
 
     def getTResponse(self, gdbInterrupt=False):
         return self.main_core.getTResponse(gdbInterrupt)
+
+    def getThreadsXML(self):
+        root = Element('threads')
+        t = SubElement(root, 'thread', id="1", core="0")
+        t.text = "Thread mode"
+        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
 

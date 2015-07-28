@@ -125,7 +125,7 @@ class Target(object):
     def readCoreRegister(self, id):
         raise NotImplementedError()
 
-    def writeCoreRegister(self, id):
+    def writeCoreRegister(self, id, data):
         raise NotImplementedError()
 
     def readCoreRegisterRaw(self, reg):

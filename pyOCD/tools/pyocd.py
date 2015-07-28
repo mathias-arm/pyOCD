@@ -64,8 +64,8 @@ COMMAND_INFO = {
             },
         'erase' : {
             'aliases' : [],
-            'args' : "",
-            'help' : "Erase all internal flash"
+            'args' : "ADDR [COUNT]",
+            'help' : "Erase internal flash sectors"
             },
         'unlock' :  {
             'aliases' : [],
@@ -166,6 +166,11 @@ COMMAND_INFO = {
             'aliases' : ['quit'],
             'args' : "",
             'help' : "Quit pyocd-tool"
+            },
+        'core' : {
+            'aliases' : [],
+            'args' : "[NUM]",
+            'help' : "Select CPU core by number or print selected core"
             },
         }
 
@@ -348,7 +353,8 @@ class PyOCDTool(object):
                 'log' :     self.handle_log,
                 'clock' :   self.handle_clock,
                 'exit' :    self.handle_exit,
-                'quit' :    self.handle_exit
+                'quit' :    self.handle_exit,
+                'core' :    self.handle_core,
             }
 
     def get_args(self):
@@ -634,8 +640,20 @@ class PyOCDTool(object):
             self.target.writeBlockMemoryUnaligned8(addr, data)
 
     def handle_erase(self, args):
+        if len(args) < 1:
+            raise ToolError("invalid arguments")
+        addr = int(args[0], base=0)
+        if len(args) < 2:
+            count = 1
+        else:
+            count = int(args[1], base=0)
         self.flash.init()
-        self.flash.eraseAll()
+        while count:
+            info = self.flash.getPageInfo(addr)
+            self.flash.erasePage(info.base_addr)
+            print "Erased page 0x%08x" % info.base_addr
+            count -= 1
+            addr += info.size
 
     def handle_unlock(self, args):
         # Currently the same as erase.
@@ -722,6 +740,14 @@ class PyOCDTool(object):
             print "Exception while executing expression:", e
             traceback.print_exc()
 
+    def handle_core(self, args):
+        if len(args) < 1:
+            print "Core %d is selected" % self.target.selected_core
+            return
+        core = int(args[0], base=0)
+        self.target.selectCore(core)
+        print "Selected core %d" % core
+
     def isFlashWrite(self, addr, width, data):
         mem_map = self.board.target.getMemoryMap()
         region = mem_map.getRegionForAddress(addr)
@@ -745,7 +771,7 @@ class PyOCDTool(object):
     # '[0x1040]'. You can also use put an offset in the brackets after a comma, such as
     # '[r3,8]'. The offset can be positive or negative, and any supported base.
     def convert_value(self, arg):
-        arg = arg.lower()
+        arg = arg.lower().replace('_', '')
         deref = (arg[0] == '[')
         if deref:
             arg = arg[1:-1]
@@ -804,6 +830,12 @@ class PyOCDTool(object):
                 msb = f.bit_offset + f.bit_width - 1
                 lsb = f.bit_offset
                 f_value = mask.bfx(value, msb, lsb)
+                v_enum = None
+                if f.enumerated_values:
+                    for v in f.enumerated_values:
+                        if v.value == f_value:
+                            v_enum = v
+                            break
                 if f.bit_width == 1:
                     bits_str = "%d" % lsb
                 else:
@@ -812,8 +844,12 @@ class PyOCDTool(object):
                 digits = (f.bit_width + 3) / 4
                 f_value_str = "0" * (digits - len(f_value_str)) + f_value_str
                 f_value_bin_str = bin(f_value)[2:]
-                f_value_bin_str = "0b" + "0" * (f.bit_width - len(f_value_bin_str)) + f_value_bin_str
-                print "  %s[%s] = %s (%s)" % (f.name, bits_str, f_value_str, f_value_bin_str)
+                f_value_bin_str = "0" * (f.bit_width - len(f_value_bin_str)) + f_value_bin_str
+                if v_enum:
+                    f_value_enum_str = " %s: %s" % (v.name, v_enum.description)
+                else:
+                    f_value_enum_str = ""
+                print "  %s[%s] = %s (%s)%s" % (f.name, bits_str, f_value_str, f_value_bin_str, f_value_enum_str)
 
     def print_memory_map(self):
         print "Region          Start         End           Blocksize"

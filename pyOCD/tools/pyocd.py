@@ -411,7 +411,8 @@ class PyOCDTool(object):
             try:
                 self.board.init()
             except Exception as e:
-                print "Exception while initing board:", e
+                print "Exception while initing board: %s" % e
+                traceback.print_exc()
 
             self.target = self.board.target
             self.transport = self.board.transport
@@ -748,7 +749,7 @@ class PyOCDTool(object):
             print "Core %d is selected" % self.target.selected_core
             return
         core = int(args[0], base=0)
-        self.target.selectCore(core)
+        self.target.select_core(core)
         print "Selected core %d" % core
 
     def isFlashWrite(self, addr, width, data):

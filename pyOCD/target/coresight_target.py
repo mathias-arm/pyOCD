@@ -21,6 +21,7 @@ from ..transport.transport import Transport
 import threading
 from cmsis_svd.parser import SVDParser
 import logging
+from xml.etree.ElementTree import (Element, SubElement, tostring)
 
 class SVDFile(object):
     def __init__(self, filename=None, vendor=None, is_local=False):
@@ -45,17 +46,18 @@ class CoreSightTarget(Target):
         self.cores = []
         self.aps = []
         self.dp = dap.DebugPort(transport)
-        self.selected_core = 0
+        self._selected_core = 0
         self._svd_load_thread = None
 
     @property
-    def main_core(self):
-        return self.cores[self.selected_core]
+    def selected_core(self):
+        return self.cores[self._selected_core]
 
-    def selectCore(self, num):
+    def select_core(self, num):
         if num >= len(self.cores):
             raise ValueError("invalid core number")
-        self.selected_core = num
+        logging.debug("selected core #%d" % num)
+        self._selected_core = num
 
     @property
     ## @brief Waits for SVD file to complete loading before returning.
@@ -93,113 +95,113 @@ class CoreSightTarget(Target):
 
         # Create CortexM core.
         self.cores.append(cortex_m.CortexM(self.transport, self.dp, self.aps[0], self.memory_map))
-        self.main_core.init(initial_setup=initial_setup, bus_accessible=bus_accessible)
+        self.selected_core.init(initial_setup=initial_setup, bus_accessible=bus_accessible)
 
     def readIDCode(self):
         return self.dp.dpidr
 
     def halt(self):
-        return self.main_core.halt()
+        return self.selected_core.halt()
 
     def step(self):
-        return self.main_core.step()
+        return self.selected_core.step()
 
     def resume(self):
-        return self.main_core.resume()
+        return self.selected_core.resume()
 
     def writeMemory(self, addr, value, transfer_size=32):
-        return self.main_core.writeMemory(addr, value, transfer_size)
+        return self.selected_core.writeMemory(addr, value, transfer_size)
 
     def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
-        return self.main_core.readMemory(addr, transfer_size, mode)
+        return self.selected_core.readMemory(addr, transfer_size, mode)
 
     def writeBlockMemoryUnaligned8(self, addr, value):
-        return self.main_core.writeBlockMemoryUnaligned8(addr, value)
+        return self.selected_core.writeBlockMemoryUnaligned8(addr, value)
 
     def writeBlockMemoryAligned32(self, addr, data):
-        return self.main_core.writeBlockMemoryAligned32(addr, data)
+        return self.selected_core.writeBlockMemoryAligned32(addr, data)
 
     def readBlockMemoryUnaligned8(self, addr, size):
-        return self.main_core.readBlockMemoryUnaligned8(addr, size)
+        return self.selected_core.readBlockMemoryUnaligned8(addr, size)
 
     def readBlockMemoryAligned32(self, addr, size):
-        return self.main_core.readBlockMemoryAligned32(addr, size)
+        return self.selected_core.readBlockMemoryAligned32(addr, size)
 
     def readCoreRegister(self, id):
-        return self.main_core.readCoreRegister(id)
+        return self.selected_core.readCoreRegister(id)
 
     def writeCoreRegister(self, id, data):
-        return self.main_core.writeCoreRegister(id, data)
+        return self.selected_core.writeCoreRegister(id, data)
 
     def readCoreRegisterRaw(self, reg):
-        return self.main_core.readCoreRegisterRaw(reg)
+        return self.selected_core.readCoreRegisterRaw(reg)
 
     def readCoreRegistersRaw(self, reg_list):
-        return self.main_core.readCoreRegistersRaw(reg_list)
+        return self.selected_core.readCoreRegistersRaw(reg_list)
 
     def writeCoreRegisterRaw(self, reg, data):
-        self.main_core.writeCoreRegisterRaw(reg, data)
+        self.selected_core.writeCoreRegisterRaw(reg, data)
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
-        self.main_core.writeCoreRegistersRaw(reg_list, data_list)
+        self.selected_core.writeCoreRegistersRaw(reg_list, data_list)
 
     def setBreakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
-        return self.main_core.setBreakpoint(addr, type)
+        return self.selected_core.setBreakpoint(addr, type)
 
     def getBreakpointType(self, addr):
-        return self.main_core.getBreakpointType(addr)
+        return self.selected_core.getBreakpointType(addr)
 
     def removeBreakpoint(self, addr):
-        return self.main_core.removeBreakpoint(addr)
+        return self.selected_core.removeBreakpoint(addr)
 
     def setWatchpoint(self, addr, size, type):
-        return self.main_core.setWatchpoint(addr, size, type)
+        return self.selected_core.setWatchpoint(addr, size, type)
 
     def removeWatchpoint(self, addr, size, type):
-        return self.main_core.removeWatchpoint(addr, size, type)
+        return self.selected_core.removeWatchpoint(addr, size, type)
 
     def reset(self):
-        return self.main_core.reset()
+        return self.selected_core.reset()
 
     def resetStopOnReset(self, software_reset=None):
-        return self.main_core.resetStopOnReset(software_reset)
+        return self.selected_core.resetStopOnReset(software_reset)
 
     def setTargetState(self, state):
-        return self.main_core.setTargetState(state)
+        return self.selected_core.setTargetState(state)
 
     def getState(self):
-        return self.main_core.getState()
+        return self.selected_core.getState()
 
     def getMemoryMap(self):
         return self.memory_map
 
     def setVectorCatchFault(self, enable):
-        return self.main_core.setVectorCatchFault(enable)
+        return self.selected_core.setVectorCatchFault(enable)
 
     def getVectorCatchFault(self):
-        return self.main_core.getVectorCatchFault()
+        return self.selected_core.getVectorCatchFault()
 
     def setVectorCatchReset(self, enable):
-        return self.main_core.setVectorCatchReset(enable)
+        return self.selected_core.setVectorCatchReset(enable)
 
     def getVectorCatchReset(self):
-        return self.main_core.getVectorCatchReset()
+        return self.selected_core.getVectorCatchReset()
 
     # GDB functions
     def getTargetXML(self):
-        return self.main_core.getTargetXML()
+        return self.selected_core.getTargetXML()
 
     def getRegisterContext(self):
-        return self.main_core.getRegisterContext()
+        return self.selected_core.getRegisterContext()
 
     def setRegisterContext(self, data):
-        return self.main_core.setRegisterContext(data)
+        return self.selected_core.setRegisterContext(data)
 
     def setRegister(self, reg, data):
-        return self.main_core.setRegister(reg, data)
+        return self.selected_core.setRegister(reg, data)
 
-    def getTResponse(self, gdbInterrupt=False):
-        return self.main_core.getTResponse(gdbInterrupt)
+    def getTResponse(self, forceSignal=None):
+        return self.selected_core.getTResponse(forceSignal)
 
     def getThreadsXML(self):
         root = Element('threads')

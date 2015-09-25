@@ -120,7 +120,7 @@ class Kinetis(CoreSightTarget):
                 raise Exception("Target failed to stay halted during init sequence")
 
         self.aps[0].initROMTable()
-        self.main_core.init(initial_setup=False, bus_accessible=True)
+        self.cores[0].init(initial_setup=False, bus_accessible=True)
 
     def isLocked(self):
         val = self.mdm_ap.readReg(MDM_STATUS)

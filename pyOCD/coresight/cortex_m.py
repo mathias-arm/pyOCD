@@ -315,7 +315,7 @@ class CortexM(Target):
         RegisterInfo('s31',     64,         'float',        'float'),
         ]
 
-    def __init__(self, transport, dp, ap, memoryMap=None):
+    def __init__(self, transport, dp, ap, memoryMap=None, core_num=0):
         super(CortexM, self).__init__(transport, memoryMap)
 
         self.hw_breakpoints = []
@@ -333,22 +333,13 @@ class CortexM(Target):
         self.has_fpu = False
         self.dp = dp
         self.ap = ap
+        self.core_number = core_num
 
     def init(self, initial_setup=True, bus_accessible=True):
         """
         Cortex M initialization
         """
-#         if initial_setup:
-#             self.dp.init()
-#             self.ap.init(False)
-
-#             self.idcode = self.readIDCode()
-
-            # select bank 0 (to access DRW and TAR)
-#             self.dp.powerUpDebug()
-
         if bus_accessible:
-#             self.ap.initROMTable()
             if self.halt_on_connect:
                 self.halt()
             self.setupFPB()
@@ -557,7 +548,7 @@ class CortexM(Target):
                 self.writeMemory(CortexM.NVIC_AIRCR, CortexM.NVIC_AIRCR_VECTKEY | CortexM.NVIC_AIRCR_SYSRESETREQ)
                 # Without a flush a transfer error can occur
                 self.dp.flush()
-            except TransferError:
+            except Transport.TransferError:
                 pass
         else:
             self.dp.reset()
@@ -1108,7 +1099,7 @@ class CortexM(Target):
         response += self.getRegIndexValuePairs([7, 13, 14, 15])
 
         # Append thread and core
-        response += "thread:1;core:0;"
+        response += "thread:%x;core:%x;" % (self.core_number + 1, self.core_number)
 
         return response
 

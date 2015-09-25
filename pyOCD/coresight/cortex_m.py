@@ -199,6 +199,8 @@ class CortexM(Target):
     S_HALT = (1 << 17)
     S_SLEEP = (1 << 18)
     S_LOCKUP = (1 << 19)
+    S_RETIRE_ST = (1 << 24)
+    S_RESET_ST = (1 << 25)
 
     # Debug Core Register Data Register
     DCRDR = 0xE000EDF8
@@ -578,7 +580,7 @@ class CortexM(Target):
         self.reset(software_reset)
 
         # wait until the unit resets
-        while (self.getState() == Target.TARGET_RUNNING):
+        while (self.isRunning()):
             pass
 
         # restore vector catch setting
@@ -593,9 +595,28 @@ class CortexM(Target):
 
     def getState(self):
         dhcsr = self.readMemory(CortexM.DHCSR)
-        if dhcsr & (CortexM.C_STEP | CortexM.C_HALT):
+        if dhcsr & CortexM.S_RESET_ST:
+            # Reset is a special case because the bit is sticky and really means
+            # "core was reset since last read of DHCSR". We have to re-read the
+            # DHCSR, check if S_RESET_ST is still set and make sure no instructions
+            # were executed by checking S_RETIRE_ST.
+            newDhcsr = self.readMemory(CortexM.DHCSR)
+            if (newDhcsr & CortexM.S_RESET_ST) and not (newDhcsr & CortexM.S_RETIRE_ST):
+                return Target.TARGET_RESET
+        if dhcsr & CortexM.S_LOCKUP:
+            return Target.TARGET_LOCKUP
+        elif dhcsr & CortexM.S_SLEEP:
+            return Target.TARGET_SLEEPING
+        elif dhcsr & CortexM.S_HALT:
             return Target.TARGET_HALTED
-        return Target.TARGET_RUNNING
+        else:
+            return Target.TARGET_RUNNING
+
+    def isRunning(self):
+        return self.getState() == Target.TARGET_RUNNING
+
+    def isHalted(self):
+        return self.getState() == Target.TARGET_HALTED
 
     def resume(self):
         """

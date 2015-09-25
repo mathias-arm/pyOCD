@@ -49,7 +49,10 @@ LEVELS = {
 
 CORE_STATUS_DESC = {
         Target.TARGET_HALTED : "Halted",
-        Target.TARGET_RUNNING : "Running"
+        Target.TARGET_RUNNING : "Running",
+        Target.TARGET_RESET : "Reset",
+        Target.TARGET_SLEEPING : "Sleeping",
+        Target.TARGET_LOCKUP : "Lockup",
         }
 
 ## Default SWD clock in kHz.

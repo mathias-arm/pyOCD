@@ -19,8 +19,11 @@ from ..transport.transport import Transport
 
 class Target(object):
 
-    TARGET_RUNNING = (1 << 0)
-    TARGET_HALTED = (1 << 1)
+    TARGET_RUNNING = 1   # Core is executing code.
+    TARGET_HALTED = 2    # Core is halted in debug mode.
+    TARGET_RESET = 3     # Core is being held in reset.
+    TARGET_SLEEPING = 4  # Core is sleeping due to a wfi or wfe instruction.
+    TARGET_LOCKUP = 5    # Core is locked up.
 
     # Types of breakpoints.
     #
@@ -166,6 +169,12 @@ class Target(object):
 
     def getState(self):
         raise NotImplementedError()
+
+    def isRunning(self):
+        return self.getState() == Target.TARGET_RUNNING
+
+    def isHalted(self):
+        return self.getState() == Target.TARGET_HALTED
 
     def getMemoryMap(self):
         return self.memory_map

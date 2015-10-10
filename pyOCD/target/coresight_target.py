@@ -103,8 +103,8 @@ class CoreSightTarget(Target):
     def halt(self):
         return self.selected_core.halt()
 
-    def step(self):
-        return self.selected_core.step()
+    def step(self, disable_interrupts=True):
+        return self.selected_core.step(disable_interrupts)
 
     def resume(self):
         return self.selected_core.resume()
@@ -144,6 +144,9 @@ class CoreSightTarget(Target):
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
         self.selected_core.writeCoreRegistersRaw(reg_list, data_list)
+
+    def findBreakpoint(self, addr):
+        return self.selected_core.findBreakpoint(addr)
 
     def setBreakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
         return self.selected_core.setBreakpoint(addr, type)
@@ -202,6 +205,9 @@ class CoreSightTarget(Target):
 
     def getTResponse(self, forceSignal=None):
         return self.selected_core.getTResponse(forceSignal)
+
+    def getSignalValue(self):
+        return self.selected_core.getSignalValue()
 
     def getThreadsXML(self):
         root = Element('threads')

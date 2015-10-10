@@ -77,7 +77,7 @@ class Target(object):
     def halt(self):
         raise NotImplementedError()
 
-    def step(self):
+    def step(self, disable_interrupts=True):
         raise NotImplementedError()
 
     def resume(self):
@@ -141,6 +141,9 @@ class Target(object):
         raise NotImplementedError()
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
+        raise NotImplementedError()
+
+    def findBreakpoint(self, addr):
         raise NotImplementedError()
 
     def setBreakpoint(self, addr, type=BREAKPOINT_AUTO):
@@ -213,4 +216,7 @@ class Target(object):
         raise NotImplementedError()
 
     def getTResponse(self, gdbInterrupt=False):
+        raise NotImplementedError()
+
+    def getSignalValue(self):
         raise NotImplementedError()

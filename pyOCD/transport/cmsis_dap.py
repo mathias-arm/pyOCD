@@ -368,19 +368,22 @@ class CMSIS_DAP(Transport):
                 data = self.protocol.transfer(transfer_count, self.request_list, self.data_list)
                 self.data_read_list.extend(data)
             except Transport.TransferError:
-                # Dump any pending commands
-                self.request_list = []
-                self.data_list = []
-                # Dump any data read
-                self.data_read_list = []
-                # Invalidate cached registers
-                self.csw = {}
-                self.dp_select = -1
-                # Clear error
-                self.clearStickyErr()
+                self.invalidate()
                 raise
             self.request_list = []
             self.data_list = []
+
+    def invalidate(self):
+        # Dump any pending commands
+        self.request_list = []
+        self.data_list = []
+        # Dump any data read
+        self.data_read_list = []
+        # Invalidate cached registers
+        self.csw = {}
+        self.dp_select = -1
+        # Clear error
+        self.clearStickyErr()
 
     def _write(self, request, data=0):
         """

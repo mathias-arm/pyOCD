@@ -695,9 +695,16 @@ class CortexM(Target):
         reg_vals = []
         for reg in reg_list:
             dhcsr_val = self.readMemory(CortexM.DHCSR, mode=Transport.READ_END)
-            assert dhcsr_val & CortexM.S_REGRDY
-            # read DCRDR
+#             assert dhcsr_val & CortexM.S_REGRDY
+
+            # read DCRDR. Even if we got an error, we need to do this read to extract
+            # the value from the deferred read queue,
             val = self.readMemory(CortexM.DCRDR, mode=Transport.READ_END)
+
+            # If we couldn't read the register, stuff a dummy zero in the return value list.
+            if (dhcsr_val & CortexM.S_REGRDY) == 0:
+                reg_vals.append(0)
+                continue
 
             # Special handling for registers that are combined into a single DCRSR number.
             if (reg < 0) and (reg >= -4):

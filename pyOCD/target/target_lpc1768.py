@@ -16,9 +16,10 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
-class LPC1768(CortexM):
+class LPC1768(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0,           length=0x10000,      blocksize=0x1000, isBootMemory=True),

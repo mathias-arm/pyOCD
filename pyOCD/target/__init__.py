@@ -39,7 +39,7 @@ import target_w7500
 import semihost
 
 TARGET = {
-          'cortex_m': cortex_m.CortexM,
+#           'cortex_m': cortex_m.CortexM,
           'kinetis': target_kinetis.Kinetis,
           'kl02z': target_kl02z.KL02Z,
           'kl05z': target_kl05z.KL05Z,

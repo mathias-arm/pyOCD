@@ -16,7 +16,7 @@
 """
 
 from ..coresight.cortex_m import CortexM
-from .coresight_target import SVDFile
+from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
@@ -39,7 +39,7 @@ DBGMCU_APB2_VAL = 0x00070800
 
 
 
-class STM32F051(CortexM):
+class STM32F051(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0x08000000,  length=0x10000,      blocksize=0x400, isBootMemory=True),

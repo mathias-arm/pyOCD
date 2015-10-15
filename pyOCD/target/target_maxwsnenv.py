@@ -16,11 +16,12 @@
 """
 
 from ..coresight.cortex_m import CortexM
+from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 from pyOCD.transport.cmsis_dap_core import PINS
 import logging
 
-class MAXWSNENV(CortexM):
+class MAXWSNENV(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0,           length=0x40000,      blocksize=0x800, isBootMemory=True),

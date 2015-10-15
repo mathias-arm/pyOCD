@@ -16,10 +16,10 @@
 """
 
 from ..coresight.cortex_m import CortexM
-from .coresight_target import SVDFile
+from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
-class LPC4330(CortexM):
+class LPC4330(CoreSightTarget):
 
     memoryMap = MemoryMap(
         FlashRegion(    start=0x14000000,  length=0x4000000,    blocksize=0x400, isBootMemory=True),

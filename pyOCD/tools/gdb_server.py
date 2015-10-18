@@ -164,7 +164,7 @@ class GDBServerTool(object):
             boards = []
             obj = {
                 'pyocd_version' : __version__,
-                'version' : 1,
+                'version' : { 'major' : 1, 'minor' : 0 },
                 'status' : status,
                 'boards' : boards,
                 }
@@ -175,9 +175,11 @@ class GDBServerTool(object):
             for mbed in all_mbeds:
                 d = {
                     'unique_id' : mbed.unique_id,
-                    'info' : mbed.getInfo().encode('ascii', 'ignore'),
+                    'info' : mbed.getInfo(),
                     'board_name' : mbed.getBoardName(),
-                    'target' : mbed.getTargetType()
+                    'target' : mbed.getTargetType(),
+                    'vendor_name' : mbed.interface.vendor_name,
+                    'product_name' : mbed.interface.product_name,
                     }
                 boards.append(d)
 
@@ -198,7 +200,7 @@ class GDBServerTool(object):
             targets = []
             obj = {
                 'pyocd_version' : __version__,
-                'version' : 1,
+                'version' : { 'major' : 1, 'minor' : 0 },
                 'status' : 0,
                 'targets' : targets
                 }

@@ -880,7 +880,7 @@ class CortexM(Target):
         response += self.getRegIndexValuePairs([7, 13, 14, 15])
 
         # Append thread and core
-        response += "thread:%x;core:%x;" % (self.core_number + 1, self.core_number)
+#         response += "thread:%x;core:%x;" % (self.core_number + 1, self.core_number)
 
         return response
 
@@ -913,8 +913,4 @@ class CortexM(Target):
             str += conversion.byteToHex2(regIndex) + ':' + conversion.u32beToHex8le(reg) + ';'
         return str
 
-    def getThreadsXML(self):
-        root = Element('threads')
-        t = SubElement(root, 'thread', id="1", core="0")
-        t.text = "Thread mode"
-        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+

@@ -202,7 +202,18 @@ class CoreSightTarget(Target):
 
     def getThreadsXML(self):
         root = Element('threads')
-        t = SubElement(root, 'thread', id="1", core="0")
-        t.text = "Thread mode"
+        for c in self.cores:
+            tid = 'p%x.%x' % (c.core_number + 1, c.core_number + 1)
+            t = SubElement(root, 'thread', id=tid, core=str(c.core_number))
+
+            state = c.getState()
+            CORE_STATUS_DESC = {
+                Target.TARGET_HALTED : "Halted",
+                Target.TARGET_RUNNING : "Running",
+                Target.TARGET_RESET : "Reset",
+                Target.TARGET_SLEEPING : "Sleeping",
+                Target.TARGET_LOCKUP : "Lockup",
+                }
+            t.text = CORE_STATUS_DESC[state]
         return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
 

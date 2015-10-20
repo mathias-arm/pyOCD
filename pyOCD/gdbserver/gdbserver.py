@@ -29,16 +29,36 @@ from time import sleep, time
 import sys
 import traceback
 import Queue
+from xml.etree.ElementTree import (Element, SubElement, tostring)
 
 CTRL_C = '\x03'
 
 # Logging options. Set to True to enable.
 LOG_MEM = False # Log memory accesses.
 LOG_ACK = False # Log ack or nak.
-LOG_PACKETS = False # Log all packets sent and received.
+LOG_PACKETS = True # Log all packets sent and received.
 
 def checksum(data):
     return "%02x" % (sum([ord(c) for c in data]) % 256)
+
+## @brief Extracts process and thread IDs from the GDB thread-id syntax.
+#
+# The thread-id syntax used between GDB and the stub is "pP.T", where P and T are both
+# hex integers for the process ID and thread ID, respectively. The IDs must be a positive
+# integer. Special cases are 0 to mean an arbitrary thread/process, and -1 to mean all
+# threads or processes.
+#
+# @param tid String with IDs in thread-id syntax, i.e. "p2.-1" to mean all threads in
+#   process 2.
+# @return 2-tuple of (process-id, thread-id). If there is no process, its ID will be None.
+def split_thread_id(tid):
+    if tid.startswith('p'):
+        pid, tid = tid[1:].split('.')
+        pid = int(pid, base=16)
+    else:
+        pid = None
+    tid = int(tid, base=16)
+    return pid, tid
 
 ## @brief Exception used to signal the GDB server connection closed.
 class ConnectionClosedException(Exception):
@@ -240,7 +260,8 @@ class GDBServer(threading.Thread):
         self.packet_io = None
         self.gdb_features = []
         self.non_stop = False
-        self.is_target_running = (self.target.getState() == Target.TARGET_RUNNING)
+        self.multiprocess = False
+        self.is_target_running = {}
         self.flashBuilder = None
         self.lock = threading.Lock()
         self.shutdown_event = threading.Event()
@@ -251,6 +272,16 @@ class GDBServer(threading.Thread):
                 self.abstract_socket.host = 'localhost'
         else:
             self.abstract_socket = GDBWebSocket(self.wss_server)
+
+        # Instance variables to track currently selected process/thread. _c variants are for
+        # step and continue only, while the _g variants are for all other operations.
+        self.selected_process_g = None
+        self.selected_process_c = None
+        self.selected_thread_g = 1
+        self.selected_thread_c = 1
+
+        for core in self.target.cores:
+            self.is_target_running[core.core_number] = core.isRunning()
 
         # Init semihosting and telnet console.
         if self.semihost_use_syscalls:
@@ -342,21 +373,14 @@ class GDBServer(threading.Thread):
                 if self.packet_io.interrupt_event.isSet():
                     if self.non_stop:
                         self.target.halt()
-                        self.is_target_running = False
+                        self.is_target_running[self.target.selected_core.core_number] = False
                         self.sendStopNotification()
                     else:
                         logging.debug("Got unexpected ctrl-c, ignoring")
                     self.packet_io.interrupt_event.clear()
 
-                if self.non_stop and self.is_target_running:
-                    try:
-                        if self.target.getState() == Target.TARGET_HALTED:
-                            logging.debug("state halted")
-                            self.is_target_running = False
-                            self.sendStopNotification()
-                    except Exception as e:
-                        logging.error("Unexpected exception: %s", e)
-                        traceback.print_exc()
+                if self.non_stop:
+                    self.checkCoreStates()
 
                 # read command
                 try:
@@ -417,7 +441,7 @@ class GDBServer(threading.Thread):
                 return self.resume(msg[1:]), 0
 
             elif msg[1] == 'D':
-                return self.detach(msg[1:]), 1
+                return self.detach(msg[2:]), 1
 
             elif msg[1] == 'g':
                 return self.getRegisters(), 0
@@ -426,7 +450,7 @@ class GDBServer(threading.Thread):
                 return self.setRegisters(msg[2:]), 0
 
             elif msg[1] == 'H':
-                return self.createRSPPacket('OK'), 0
+                return self.setThread(msg[2:]), 0
 
             elif msg[1] == 'k':
                 return self.kill(), 1
@@ -453,7 +477,7 @@ class GDBServer(threading.Thread):
                 return self.step(msg[1:]), 0
 
             elif msg[1] == 'T': # check if thread is alive
-                return self.createRSPPacket('OK'), 0
+                return self.isThreadAlive(msg[2:]), 0
 
             elif msg[1] == 'v':
                 return self.vCommand(msg[2:]), 0
@@ -473,10 +497,106 @@ class GDBServer(threading.Thread):
             traceback.print_exc()
             return self.createRSPPacket("E01"), 0
 
+    def checkCoreStates(self):
+        for core in self.target.cores:
+            if self.is_target_running[core.core_number]:
+                try:
+                    if core.getState() == Target.TARGET_HALTED:
+                        logging.debug("core #%d state halted" % core.core_number)
+                        self.is_target_running[core.core_number] = False
+                        self.sendStopNotification()
+                except Exception as e:
+                    logging.debug("Unexpected exception: %s", e)
+                    traceback.print_exc()
+
+    def setThread(self, data):
+        data = data.split('#')[0]
+        op = data[0]
+        process_id, thread_id = split_thread_id(data[1:])
+
+        # Should be using vCont instead.
+        if op == 'c' and self.non_stop:
+            logging.debug("setThread requested for 'c' in non-stop mode, gdb should be using vCont instead")
+            return self.createRSPPacket("E01")
+
+        if op == 'g':
+            if process_id is not None:
+                # Select process.
+                if process_id == 0:
+                    self.selected_process_g = 1
+                elif process_id == -1:
+                    logging.debug("select all processes (g)")
+                    self.selected_process_g = -1
+                else:
+                    self.target.select_core(thread_id - 1)
+                    self.selected_process_g = thread_id
+
+            # Select thread.
+            # 0 means an arbitrary thread.
+            if thread_id == 0:
+                # Just always select core 0.
+                self.target.select_core(0)
+                self.selected_thread_g = 1
+            # -1 means all threads
+            elif thread_id == -1:
+                # TODO handle select all threads
+                logging.debug("select all threads (g)")
+                self.selected_thread_g = -1
+            else:
+                self.target.select_core(thread_id - 1)
+                self.selected_thread_g = thread_id
+        elif op == 'c':
+            if process_id is not None:
+                # Select process.
+                if process_id == 0:
+                    self.selected_process_c = 1
+                elif process_id == -1:
+                    logging.debug("select all processes (c)")
+                    self.selected_process_c = -1
+                else:
+                    self.target.select_core(thread_id - 1)
+                    self.selected_process_c = thread_id
+
+            # Select thread.
+            # 0 means an arbitrary thread.
+            if thread_id == 0:
+                # Just always select core 0.
+                self.target.select_core(0)
+                self.selected_thread_c = 1
+            # -1 means all threads
+            elif thread_id == -1:
+                # TODO handle select all threads
+                logging.debug("select all threads (c)")
+                self.selected_thread_c = -1
+            else:
+                self.target.select_core(thread_id - 1)
+                self.selected_thread_c = thread_id
+        else:
+            logging.debug("unknown op for H command")
+            return self.createRSPPacket("E01")
+
+        return self.createRSPPacket('OK')
+
+    def isThreadAlive(self, data):
+        data = data.split('#')[0]
+        process_id, thread_id = split_thread_id(data)
+        logging.debug("isThreadAlive:(%s,%d)" % (str(process_id), thread_id))
+
+        isValidThread = (thread_id - 1) in self.is_target_running.keys()
+        if isValidThread: # and self.target.cores[thread_id - 1].getState() not in (Target.TARGET_RESET, Target.TARGET_SLEEPING):
+            return self.createRSPPacket('OK')
+        else:
+            return self.createRSPPacket('E01')
+
     def detach(self, data):
         logging.info("Client detached")
-        resp = "OK"
-        return self.createRSPPacket(resp)
+        if self.multiprocess:
+            process_id = int(data[1:].split('#')[0], base=16)
+            logging.debug("Attempt to detach process #%d" % process_id)
+            # Ignore detach requests for secondary cores.
+            if process_id != 1:
+                return self.createRSPPacket("E01")
+        return self.createRSPPacket("OK")
 
     def kill(self):
         logging.debug("GDB kill")
@@ -493,51 +613,62 @@ class GDBServer(threading.Thread):
         addr = int(split[1], 16)
         logging.debug("GDB breakpoint %s%d @ %x" % (data[0], int(data[1]), addr))
 
-        # handle software breakpoint Z0/z0
-        if data[1] == '0' and not self.soft_bkpt_as_hard:
-            if data[0] == 'Z':
-                if not self.target.setBreakpoint(addr, Target.BREAKPOINT_SW):
-                    return self.createRSPPacket('E01') #EPERM
+        # HACK!!
+#         saved_core_num = self.target.selected_core.core_number
+#         self.target.select_core(0)
+
+        try:
+            # handle software breakpoint Z0/z0
+            if data[1] == '0' and not self.soft_bkpt_as_hard:
+                if data[0] == 'Z':
+                    if not self.target.setBreakpoint(addr, Target.BREAKPOINT_SW):
+                        return self.createRSPPacket('E01') #EPERM
+                else:
+                    self.target.removeBreakpoint(addr)
+                return self.createRSPPacket("OK")
+
+            # handle hardware breakpoint Z1/z1
+            if data[1] == '1' or (self.soft_bkpt_as_hard and data[1] == '0'):
+                if data[0] == 'Z':
+                    if self.target.setBreakpoint(addr, Target.BREAKPOINT_HW) == False:
+                        return self.createRSPPacket('E01') #EPERM
+                else:
+                    self.target.removeBreakpoint(addr)
+                return self.createRSPPacket("OK")
+
+            # handle hardware watchpoint Z2/z2/Z3/z3/Z4/z4
+            if data[1] == '2':
+                # Write-only watch
+                watchpoint_type = Target.WATCHPOINT_WRITE
+            elif data[1] == '3':
+                # Read-only watch
+                watchpoint_type = Target.WATCHPOINT_READ
+            elif data[1] == '4':
+                # Read-Write watch
+                watchpoint_type = Target.WATCHPOINT_READ_WRITE
             else:
-                self.target.removeBreakpoint(addr)
-            return self.createRSPPacket("OK")
-
-        # handle hardware breakpoint Z1/z1
-        if data[1] == '1' or (self.soft_bkpt_as_hard and data[1] == '0'):
-            if data[0] == 'Z':
-                if self.target.setBreakpoint(addr, Target.BREAKPOINT_HW) == False:
-                    return self.createRSPPacket('E01') #EPERM
-            else:
-                self.target.removeBreakpoint(addr)
-            return self.createRSPPacket("OK")
-
-        # handle hardware watchpoint Z2/z2/Z3/z3/Z4/z4
-        if data[1] == '2':
-            # Write-only watch
-            watchpoint_type = Target.WATCHPOINT_WRITE
-        elif data[1] == '3':
-            # Read-only watch
-            watchpoint_type = Target.WATCHPOINT_READ
-        elif data[1] == '4':
-            # Read-Write watch
-            watchpoint_type = Target.WATCHPOINT_READ_WRITE
-        else:
-            return self.createRSPPacket('E01') #EPERM
-
-        size = int(split[2], 16)
-        if data[0] == 'Z':
-            if self.target.setWatchpoint(addr, size, watchpoint_type) == False:
                 return self.createRSPPacket('E01') #EPERM
-        else:
-            self.target.removeWatchpoint(addr, size, watchpoint_type)
-        return self.createRSPPacket("OK")
+
+            size = int(split[2], 16)
+            if data[0] == 'Z':
+                if self.target.setWatchpoint(addr, size, watchpoint_type) == False:
+                    return self.createRSPPacket('E01') #EPERM
+            else:
+                self.target.removeWatchpoint(addr, size, watchpoint_type)
+            return self.createRSPPacket("OK")
+        finally:
+            pass
+#             self.target.select_core(saved_core_num)
 
     def stopReasonQuery(self):
         # In non-stop mode, if no threads are stopped we need to reply with OK.
-        if self.non_stop and self.is_target_running:
+        if self.non_stop and all(self.is_target_running.values()):
             return self.createRSPPacket("OK")
 
-        return self.createRSPPacket(self.target.getTResponse())
+        if not any(self.is_target_running.values()):
+            return self.createRSPPacket("S02")
+        else:
+            return self.createRSPPacket(self.getTResponse())
 
     def _get_resume_step_addr(self, data):
         if data is None:
@@ -554,8 +685,16 @@ class GDBServer(threading.Thread):
         return addr
 
     def resume(self, data):
+        assert not self.non_stop
+
         addr = self._get_resume_step_addr(data)
-        self.target.resume()
+        any_core_resumed = False
+        for core in self.target.cores:
+            if not core.isRunning():
+                any_core_resumed = True
+                core.resume()
+        if not any_core_resumed:
+            return self.getTResponse(forceSignal=signals.SIGINT)
         logging.debug("target resumed")
 
         val = ''
@@ -569,22 +708,28 @@ class GDBServer(threading.Thread):
             if self.packet_io.interrupt_event.wait(0.01):
                 logging.debug("receive CTRL-C")
                 self.packet_io.interrupt_event.clear()
-                self.target.halt()
-                val = self.target.getTResponse(forceSignal=signals.SIGINT)
+                for core in self.target.cores:
+                    core.halt()
+                val = self.getTResponse(forceSignal=signals.SIGINT)
                 break
 
             try:
-                if self.target.getState() == Target.TARGET_HALTED:
-                    # Handle semihosting
-                    if self.enable_semihosting:
-                        was_semihost = self.semihost.check_and_handle_semihost_request()
+                exit_resume = False
+                for core in self.target.cores:
+                    if core.getState() == Target.TARGET_HALTED:
+                        # Handle semihosting
+                        if self.enable_semihosting:
+                            was_semihost = self.semihost.check_and_handle_semihost_request()
 
-                        if was_semihost:
-                            self.target.resume()
-                            continue
+                            if was_semihost:
+                                core.resume()
+                                continue
 
-                    logging.debug("state halted")
-                    val = self.target.getTResponse()
+                        logging.debug("core #%d state halted" % core.core_number)
+                        val = self.getTResponse(core=core)
+                        exit_resume = True
+                        break
+                if exit_resume:
                     break
             except Exception as e:
                 try:
@@ -602,14 +747,15 @@ class GDBServer(threading.Thread):
         addr = self._get_resume_step_addr(data)
         logging.debug("GDB step: %s", data)
         self.target.step(not self.step_into_interrupt)
-        return self.createRSPPacket(self.target.getTResponse())
+        return self.createRSPPacket(self.getTResponse())
 
     def halt(self):
-        self.target.halt()
-        return self.createRSPPacket(self.target.getTResponse())
+        for core in self.target.cores:
+            core.halt()
+        return self.createRSPPacket(self.getTResponse())
 
     def sendStopNotification(self, forceSignal=None):
-        data = self.target.getTResponse(forceSignal=forceSignal)
+        data = self.getTResponse(forceSignal=forceSignal)
         packet = '%Stop:' + data + '#' + checksum(data)
         self.packet_io.send(packet)
 
@@ -642,51 +788,71 @@ class GDBServer(threading.Thread):
         if not ops:
             return self.createRSPPacket("OK")
 
-        thread_actions = { 1 : None } # our only thread
         default_action = None
+        thread_actions = { } # our only thread
+        for core in self.target.cores:
+            thread_actions[core.core_number + 1] = None
+
         for op in ops:
             args = op.split(':')
             action = args[0]
             if len(args) > 1:
-                thread_id = args[1]
-                if thread_id == '-1' or thread_id == '0':
-                    thread_id = '1'
-                thread_id = int(thread_id, base=16)
+                process_id, thread_id = split_thread_id(args[1])
+                if thread_id == -1:
+                    for k in thread_actions.keys():
+                        thread_actions[k] = action
+                    break
+                elif thread_id == 0:
+                    thread_id = 1
+#                 thread_id = int(thread_id, base=16)
                 thread_actions[thread_id] = action
             else:
                 default_action = action
 
         logging.debug("thread_actions=%s; default_action=%s", repr(thread_actions), default_action)
 
-        # Only thread 1 is supported at the moment.
-        if thread_actions[1] is None:
-            if default_action is None:
-                return self.createRSPPacket('E01')
-            thread_actions[1] = default_action
+#         if self.non_stop:
+        for core in self.target.cores:
+            core_thread_id = core.core_number + 1
+            if thread_actions[core_thread_id] is None:
+#                 if default_action is None:
+#                     return self.createRSPPacket('E01')
+                thread_actions[core_thread_id] = default_action
 
-        if thread_actions[1] in ('c', 'C'):
-            if self.non_stop:
-                self.target.resume()
-                self.is_target_running = True
-                return self.createRSPPacket("OK")
-            else:
-                return self.resume(None)
-        elif thread_actions[1] in ('s', 'S'):
-            if self.non_stop:
-                self.target.step(not self.step_into_interrupt)
+            if thread_actions[core_thread_id] in ('c', 'C'):
+                if self.non_stop:
+                    core.resume()
+                    self.is_target_running[core.core_number] = True
+                    return self.createRSPPacket("OK")
+                else:
+                    return self.resume(None)
+            elif thread_actions[core_thread_id] in ('s', 'S'):
+                if self.non_stop:
+                    core.step(not self.step_into_interrupt)
+                    self.packet_io.send(self.createRSPPacket("OK"))
+                    self.sendStopNotification()
+                    return None
+                else:
+                    return self.step(None)
+            elif thread_actions[core_thread_id] == 't':
+                # Must ignore t command in all-stop mode.
+                if not self.non_stop:
+                    return self.createRSPPacket("")
                 self.packet_io.send(self.createRSPPacket("OK"))
-                self.sendStopNotification()
-                return None
-            else:
-                return self.step(None)
-        elif thread_actions[1] == 't':
-            # Must ignore t command in all-stop mode.
-            if not self.non_stop:
-                return self.createRSPPacket("")
-            self.packet_io.send(self.createRSPPacket("OK"))
-            self.target.halt()
-            self.is_target_running = False
-            self.sendStopNotification(forceSignal=0)
+                core.halt()
+                self.is_target_running[core.core_number] = False
+                self.sendStopNotification(forceSignal=0)
+#         else:
+#             for core in self.target.cores:
+#
+#             if default_action in ('c', 'C'):
+#                 return self.resume(None)
+#             elif default_action in ('s', 'S'):
+#                 return self.step(None)
+#             elif default_action == 't':
+#                 # Must ignore t command in all-stop mode.
+#                 return self.createRSPPacket("")
+
 
     def flashOp(self, data):
         ops = data.split(':')[0]
@@ -883,6 +1049,9 @@ class GDBServer(threading.Thread):
             features.append('PacketSize=' + hex(self.packet_size)[2:])
             if self.target.getMemoryMapXML() is not None:
                 features.append('qXfer:memory-map:read+')
+            if 'multiprocess+' in self.gdb_features:
+                features.append('multiprocess+')
+                self.multiprocess = True
             resp = ';'.join(features)
             return self.createRSPPacket(resp)
 
@@ -909,7 +1078,8 @@ class GDBServer(threading.Thread):
                 return None
 
         elif query[0].startswith('C'):
-            return self.createRSPPacket("QC1")
+
+            return self.createRSPPacket("QC%s" % self.getThreadIDForCore(self.target.selected_core))
 
         elif query[0].find('Attached') != -1:
             return self.createRSPPacket("1")
@@ -934,6 +1104,12 @@ class GDBServer(threading.Thread):
 
         else:
             return self.createRSPPacket("")
+
+    def getCurrentThread(self, cmd):
+        if self.multiprocess:
+            return self.createRSPPacket("QCp%x.%x" % (self.selected_process_g, self.selected_thread_g))
+        else:
+            return self.createRSPPacket("QC%x" % (self.selected_thread_g))
 
     # TODO rewrite the remote command handler
     def handleRemoteCommand(self, cmd):
@@ -1017,7 +1193,7 @@ class GDBServer(threading.Thread):
         elif query == 'read_feature':
             xml = self.target.getTargetXML()
         elif query == 'threads':
-            xml = self.target.getThreadsXML()
+            xml = self.getThreadsXML()
         else:
             raise RuntimeError("Invalid XML query (%s)" % query)
 
@@ -1084,4 +1260,38 @@ class GDBServer(threading.Thread):
                 break
 
         return -1, 0
+
+    def getThreadIDForCore(self, core):
+        if self.multiprocess:
+            tid = 'p%x.%x' % (core.core_number + 1, core.core_number + 1)
+        else:
+            tid = '%x' % (core.core_number + 1)
+        return tid
+
+    def getTResponse(self, core=None, forceSignal=None):
+        if core is None:
+            core = self.target.selected_core
+        response = core.getTResponse()
+
+        # Append thread and core
+        response += "thread:%s;core:%x;" % (self.getThreadIDForCore(core), core.core_number)
+
+        return response
+
+    def getThreadsXML(self):
+        root = Element('threads')
+        c = self.target.cores[0]
+#         for c in self.target.cores:
+        t = SubElement(root, 'thread', id=self.getThreadIDForCore(c), core=str(c.core_number))
+
+        state = c.getState()
+        CORE_STATUS_DESC = {
+            Target.TARGET_HALTED : "Halted",
+            Target.TARGET_RUNNING : "Running",
+            Target.TARGET_RESET : "Reset",
+            Target.TARGET_SLEEPING : "Sleeping",
+            Target.TARGET_LOCKUP : "Lockup",
+            }
+        t.text = CORE_STATUS_DESC[state]
+        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
 

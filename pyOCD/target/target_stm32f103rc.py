@@ -31,8 +31,8 @@ class STM32F103RC(CoreSightTarget):
         RamRegion(      start=0x20000000,  length=0x10000)
         )
 
-    def __init__(self, transport):
-        super(STM32F103RC, self).__init__(transport, self.memoryMap)
+    def __init__(self, link):
+        super(STM32F103RC, self).__init__(link, self.memoryMap)
         self._svd_location = SVDFile(vendor="STMicro", filename="STM32F103xx.svd", is_local=False)
 
     def init(self):

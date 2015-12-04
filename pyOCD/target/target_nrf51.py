@@ -31,8 +31,8 @@ class NRF51(CoreSightTarget):
         RamRegion(      start=0x20000000,  length=0x4000)
         )
 
-    def __init__(self, transport):
-        super(NRF51, self).__init__(transport, self.memoryMap)
+    def __init__(self, link):
+        super(NRF51, self).__init__(link, self.memoryMap)
         self._svd_location = SVDFile(vendor="Nordic", filename="nrf51.xml", is_local=False)
 
     def resetn(self):

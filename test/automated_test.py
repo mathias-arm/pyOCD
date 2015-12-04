@@ -32,6 +32,7 @@ from basic_test import basic_test
 from speed_test import SpeedTest
 from cortex_test import CortexTest
 from flash_test import FlashTest
+from gdb_test import GdbTest
 
 
 if __name__ == "__main__":
@@ -60,6 +61,7 @@ if __name__ == "__main__":
     test_list.append(SpeedTest())
     test_list.append(CortexTest())
     test_list.append(FlashTest())
+    test_list.append(GdbTest())
 
     # Put together list of boards to test
     board_list = MbedBoard.getAllConnectedBoards(close=True, blocking=False)
@@ -85,7 +87,9 @@ if __name__ == "__main__":
     print("Test Time: %s" % (stop - start))
     if Test.all_tests_pass(result_list):
         print("All tests passed")
+        exit(0)
     else:
         print("One or more tests has failed!")
+        exit(-1)
 
     #TODO - check if any threads are still running?

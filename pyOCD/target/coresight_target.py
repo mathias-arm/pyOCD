@@ -17,7 +17,6 @@
 
 from .target import Target
 from ..coresight import (dap, ap, cortex_m)
-from ..transport.transport import Transport
 import threading
 from cmsis_svd.parser import SVDParser
 import logging
@@ -40,12 +39,12 @@ class SVDFile(object):
 # @brief Debug target that uses CoreSight classes.
 class CoreSightTarget(Target):
 
-    def __init__(self, transport, memoryMap=None):
-        super(CoreSightTarget, self).__init__(transport, memoryMap)
+    def __init__(self, link, memoryMap=None):
+        super(CoreSightTarget, self).__init__(link, memoryMap)
         self.part_number = self.__class__.__name__
         self.cores = []
         self.aps = []
-        self.dp = dap.DebugPort(transport)
+        self.dp = dap.DebugPort(link)
         self._selected_core = 0
         self._svd_load_thread = None
 
@@ -94,7 +93,7 @@ class CoreSightTarget(Target):
         self.aps[0].init(bus_accessible)
 
         # Create CortexM core.
-        self.cores.append(cortex_m.CortexM(self.transport, self.dp, self.aps[0], self.memory_map))
+        self.cores.append(cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map))
         self.selected_core.init(initial_setup=initial_setup, bus_accessible=bus_accessible)
 
     def readIDCode(self):
@@ -112,8 +111,8 @@ class CoreSightTarget(Target):
     def writeMemory(self, addr, value, transfer_size=32):
         return self.selected_core.writeMemory(addr, value, transfer_size)
 
-    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
-        return self.selected_core.readMemory(addr, transfer_size, mode)
+    def readMemory(self, addr, transfer_size=32, now=True):
+        return self.selected_core.readMemory(addr, transfer_size, now)
 
     def writeBlockMemoryUnaligned8(self, addr, value):
         return self.selected_core.writeBlockMemoryUnaligned8(addr, value)

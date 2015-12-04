@@ -18,7 +18,6 @@
 from ..coresight.cortex_m import CortexM
 from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
-from pyOCD.transport.cmsis_dap_core import PINS
 import logging
 
 class MAXWSNENV(CoreSightTarget):
@@ -30,29 +29,21 @@ class MAXWSNENV(CoreSightTarget):
         RamRegion(      start=0xe0000000,  length=0x100000)
         )
 
-    def __init__(self, transport):
-        super(MAXWSNENV, self).__init__(transport, self.memoryMap)
-
-    def readIDCode(self):
-        """
-        return the IDCODE of the core
-        """
-        if self.idcode == 0:
-            self.idcode = self.protocol.jtagIDCode()
-        return self.idcode
+    def __init__(self, link):
+        super(MAXWSNENV, self).__init__(link, self.memoryMap)
 
     def dsb(self):
         logging.info("Triggering Destructive Security Bypass...")
 
-        self.protocol.vendor(1)
+        self.link.vendor(1)
 
         # Reconnect debugger
-        self.transport.init()
+        self.link.init()
 
     def fge(self):
         logging.info("Triggering Factory Global Erase...")
 
-        self.protocol.vendor(2)
+        self.link.vendor(2)
 
         # Reconnect debugger
-        self.transport.init()
+        self.link.init()

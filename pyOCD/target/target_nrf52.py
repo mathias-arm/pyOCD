@@ -15,17 +15,32 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
+import logging
 
-class W7500(CoreSightTarget):
+# NRF52 specific registers
+RESET = 0x40000544
+RESET_ENABLE = (1 << 0)
+
+class NRF52(CoreSightTarget):
 
     memoryMap = MemoryMap(
-        FlashRegion(    start=0x00000000,  length=0x20000,      blocksize=0x100, isBootMemory=True),
-        RamRegion(      start=0x20000000,  length=0x4000)
+        FlashRegion(    start=0x0,         length=0x80000,      blocksize=0x1000, isBootMemory=True),
+        RamRegion(      start=0x20000000,  length=0x10000)
         )
 
     def __init__(self, link):
-        super(W7500, self).__init__(link, self.memoryMap)
+        super(NRF52, self).__init__(link, self.memoryMap)
 
+    def resetn(self):
+        """
+        reset a core. After a call to this function, the core
+        is running
+        """
+        #Regular reset will kick NRF out of DBG mode
+        logging.debug("target_nrf52.reset: enable reset pin")
+        self.writeMemory(RESET, RESET_ENABLE)
+        #reset
+        logging.debug("target_nrf52.reset: trigger nRST pin")
+        CortexM.reset(self)

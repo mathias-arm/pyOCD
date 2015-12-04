@@ -29,8 +29,8 @@ class LPC4330(CoreSightTarget):
         RamRegion(      start=0x20008000,  length=0x8000)
         )
 
-    def __init__(self, transport):
-        super(LPC4330, self).__init__(transport, self.memoryMap)
+    def __init__(self, link):
+        super(LPC4330, self).__init__(link, self.memoryMap)
         self.ignoreReset = False
         self._svd_location = SVDFile(vendor="NXP", filename="LPC43xx_svd_v5.xml", is_local=False)
 

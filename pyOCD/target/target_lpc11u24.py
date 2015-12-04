@@ -26,8 +26,8 @@ class LPC11U24(CoreSightTarget):
         RamRegion(      start=0x10000000,  length=0x1000)
         )
 
-    def __init__(self, transport):
-        super(LPC11U24, self).__init__(transport, self.memoryMap)
+    def __init__(self, link):
+        super(LPC11U24, self).__init__(link, self.memoryMap)
         self._svd_location = SVDFile(vendor="NXP", filename="LPC11Uxx_v7.xml", is_local=False)
 
     def resetStopOnReset(self, software_reset=None, map_to_user=True):

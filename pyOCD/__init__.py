@@ -18,9 +18,7 @@
 import board
 import flash
 import gdbserver
-import interface
 import target
-import transport
 import utility
 import coresight
 

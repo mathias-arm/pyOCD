@@ -17,8 +17,7 @@
 from xml.etree.ElementTree import (Element, SubElement, tostring)
 
 from ..target.target import Target
-from ..transport.cmsis_dap import (DP_REG, AP_REG)
-from ..transport.transport import Transport
+from pyOCD.pyDAPAccess import DAPAccess
 from ..gdbserver import signals
 from ..utility import conversion
 from .fpb import *
@@ -27,6 +26,7 @@ from .breakpoints import (Breakpoint, Watchpoint)
 from . import (dap, ap)
 import logging
 import struct
+from time import (time, sleep)
 
 # CPUID PARTNO values
 ARM_CortexM0 = 0xC20
@@ -315,8 +315,8 @@ class CortexM(Target):
         RegisterInfo('s31',     64,         'float',        'float'),
         ]
 
-    def __init__(self, transport, dp, ap, memoryMap=None, core_num=0):
-        super(CortexM, self).__init__(transport, memoryMap)
+    def __init__(self, link, dp, ap, memoryMap=None, core_num=0):
+        super(CortexM, self).__init__(link, memoryMap)
 
         self.hw_breakpoints = []
         self.breakpoints = {}
@@ -444,7 +444,7 @@ class CortexM(Target):
         """
         return the IDCODE of the core
         """
-        return self.dp.dpidr
+        return self.dp.readIDCode()
 
     def writeMemory(self, addr, value, transfer_size=32):
         """
@@ -453,12 +453,12 @@ class CortexM(Target):
         """
         self.ap.writeMemory(addr, value, transfer_size)
 
-    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
+    def readMemory(self, addr, transfer_size=32, now=True):
         """
         read a memory location. By default, a word will
         be read
         """
-        return self.ap.readMemory(addr, transfer_size, mode)
+        return self.ap.readMemory(addr, transfer_size, now)
 
     def readBlockMemoryUnaligned8(self, addr, size):
         """
@@ -544,14 +544,28 @@ class CortexM(Target):
             software_reset = True
 
         if software_reset:
+            # Perform the reset.
             try:
                 self.writeMemory(CortexM.NVIC_AIRCR, CortexM.NVIC_AIRCR_VECTKEY | CortexM.NVIC_AIRCR_SYSRESETREQ)
                 # Without a flush a transfer error can occur
                 self.dp.flush()
-            except Transport.TransferError:
-                pass
+            except DAPAccess.TransferError:
+                self.dp.flush()
+
         else:
             self.dp.reset()
+
+        # Now wait for the system to come out of reset. Keep trying to read the DHCSR until
+        # we get a good response, or we time out.
+        startTime = time()
+        while time() - startTime < 2.0:
+            try:
+                self.read32(CortexM.DHCSR)
+            except DAPAccess.TransferError:
+                self.dp.flush()
+                sleep(0.01)
+            else:
+                break
 
     def resetStopOnReset(self, software_reset=None):
         """
@@ -677,6 +691,8 @@ class CortexM(Target):
                 raise ValueError("attempt to read FPU register without FPU")
 
         # Begin all reads and writes
+        dhcsr_cb_list = []
+        reg_cb_list = []
         for reg in reg_list:
             if (reg < 0) and (reg >= -4):
                 reg = CORE_REGISTER['cfbp']
@@ -688,18 +704,17 @@ class CortexM(Target):
             # we're running so slow compared to the target that it's not necessary.
             # Read it and assert that S_REGRDY is set
 
-            self.readMemory(CortexM.DHCSR, mode=Transport.READ_START)
-            self.readMemory(CortexM.DCRDR, mode=Transport.READ_START)
+            dhcsr_cb = self.readMemory(CortexM.DHCSR, now=False)
+            reg_cb = self.readMemory(CortexM.DCRDR, now=False)
+            dhcsr_cb_list.append(dhcsr_cb)
+            reg_cb_list.append(reg_cb)
 
         # Read all results
         reg_vals = []
-        for reg in reg_list:
-            dhcsr_val = self.readMemory(CortexM.DHCSR, mode=Transport.READ_END)
-#             assert dhcsr_val & CortexM.S_REGRDY
-
-            # read DCRDR. Even if we got an error, we need to do this read to extract
-            # the value from the deferred read queue,
-            val = self.readMemory(CortexM.DCRDR, mode=Transport.READ_END)
+        for reg, reg_cb, dhcsr_cb in zip(reg_list, reg_cb_list, dhcsr_cb_list):
+            dhcsr_val = dhcsr_cb()
+#            assert dhcsr_val & CortexM.S_REGRDY
+            val = reg_cb()
 
             # If we couldn't read the register, stuff a dummy zero in the return value list.
             if (dhcsr_val & CortexM.S_REGRDY) == 0:
@@ -759,6 +774,7 @@ class CortexM(Target):
                 break
 
         # Write out registers
+        dhcsr_cb_list = []
         for reg, data in zip(reg_list, data_list):
             if (reg < 0) and (reg >= -4):
                 # Mask in the new special register value so we don't modify the other register
@@ -778,10 +794,13 @@ class CortexM(Target):
             # Technically, we need to poll S_REGRDY in DHCSR here to ensure the
             # register write has completed.
             # Read it and assert that S_REGRDY is set
-            self.readMemory(CortexM.DHCSR, mode=Transport.READ_START)
+            dhcsr_cb = self.readMemory(CortexM.DHCSR, now=False)
+            dhcsr_cb_list.append(dhcsr_cb)
 
-        for reg in reg_list:
-            dhcsr_val = self.readMemory(CortexM.DHCSR, mode=Transport.READ_END)
+        # Make sure S_REGRDY was set for all register
+        # writes
+        for dhcsr_cb in dhcsr_cb_list:
+            dhcsr_val = dhcsr_cb()
             assert dhcsr_val & CortexM.S_REGRDY
 
     ## @brief Set a hardware or software breakpoint at a specific location in memory.
@@ -884,7 +903,7 @@ class CortexM(Target):
 
             self.breakpoints[addr] = bp
             return True
-        except Transport.TransferError:
+        except DAPAccess.TransferError:
             logging.debug("Failed to set sw bp at 0x%x" % addr)
             return False
 
@@ -894,7 +913,7 @@ class CortexM(Target):
         try:
             # Restore original instruction.
             self.write16(bp.addr, bp.original_instr)
-        except Transport.TransferError:
+        except DAPAccess.TransferError:
             logging.debug("Failed to set sw bp at 0x%x" % bp.addr)
 
     def setHardwareBreakpoint(self, addr):

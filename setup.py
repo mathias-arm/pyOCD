@@ -18,20 +18,16 @@
 from setuptools import setup, find_packages
 import sys
 
-setup_requires = ['setuptools_scm!=1.5.3,!=1.5.4']
-install_requires = ['intelhex', 'cmsis-svd']
+install_requires = ['intelhex', 'six', 'enum34']
 if sys.platform.startswith('linux'):
     install_requires.extend([
         'pyusb>=1.0.0b2',
     ])
 elif sys.platform.startswith('win'):
     install_requires.extend([
-        'pywinusb',
+        'pywinusb>=0.4.0',
     ])
 elif sys.platform.startswith('darwin'):
-    setup_requires.extend([
-        'cython',
-    ])
     install_requires.extend([
         'hidapi',
     ])
@@ -42,11 +38,11 @@ setup(
         'local_scheme': 'dirty-tag',
         'write_to': 'pyOCD/_version.py'
     },
-    setup_requires=setup_requires,
+    setup_requires=['setuptools_scm!=1.5.3,!=1.5.4'],
     description="CMSIS-DAP debugger for Python",
     long_description=open('README.rst', 'Ur').read(),
-    author="samux, emilmont",
-    author_email="Samuel.Mokrani@arm.com, Emilio.Monti@arm.com",
+    author="Martin Kojtal, Russ Butler",
+    author_email="martin.kojtal@arm.com, russ.butler@arm.com",
     url='https://github.com/mbedmicro/pyOCD',
     license="Apache 2.0",
     install_requires=install_requires,

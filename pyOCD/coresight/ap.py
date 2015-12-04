@@ -15,9 +15,9 @@
  limitations under the License.
 """
 
+from ..pyDAPAccess import DAPAccess
 from .rom_table import ROMTable
-from ..transport.cmsis_dap import AP_REG
-from ..transport.transport import Transport
+from .dap import (AP_REG, _ap_addr_to_reg, READ, WRITE, AP_ACC)
 from ..utility import conversion
 import logging
 
@@ -26,7 +26,7 @@ AP_TAR = 0x04
 AP_DRW = 0x0C
 AP_IDR = 0xFC
 
-AP_SEL_SHIFT = 24
+APSEL_SHIFT = 24
 
 AP_ROM_TABLE_ADDR_REG = 0xf8
 AP_ROM_TABLE_FORMAT_MASK = 0x2
@@ -42,11 +42,35 @@ AHB_IDR_TO_WRAP_SIZE = {
     0x74770001 : 0x400,     # Used on m0+ on KL28Z
     }
 
+# AP Control and Status Word definitions
+CSW_SIZE     =  0x00000007
+CSW_SIZE8    =  0x00000000
+CSW_SIZE16   =  0x00000001
+CSW_SIZE32   =  0x00000002
+CSW_ADDRINC  =  0x00000030
+CSW_NADDRINC =  0x00000000
+CSW_SADDRINC =  0x00000010
+CSW_PADDRINC =  0x00000020
+CSW_DBGSTAT  =  0x00000040
+CSW_TINPROG  =  0x00000080
+CSW_HPROT    =  0x02000000
+CSW_MSTRTYPE =  0x20000000
+CSW_MSTRCORE =  0x00000000
+CSW_MSTRDBG  =  0x20000000
+CSW_RESERVED =  0x01000000
+
+CSW_VALUE = (CSW_RESERVED | CSW_MSTRDBG | CSW_HPROT | CSW_DBGSTAT | CSW_SADDRINC)
+
+TRANSFER_SIZE = {8: CSW_SIZE8,
+                 16: CSW_SIZE16,
+                 32: CSW_SIZE32
+                 }
+
 class AccessPort(object):
     def __init__(self, dp, ap_num):
         self.dp = dp
         self.ap_num = ap_num
-        self.transport = dp.transport
+        self.link = dp.link
         self.idr = 0
         self.rom_addr = 0
         self.has_rom_table = False
@@ -66,13 +90,17 @@ class AccessPort(object):
         self.rom_table = ROMTable(self)
         self.rom_table.init()
 
-    def readReg(self, addr):
-        return self.transport.readAP((self.ap_num << AP_SEL_SHIFT) | addr)
+    def readReg(self, addr, now=True):
+        return self.dp.readAP((self.ap_num << APSEL_SHIFT) | addr, now)
 
     def writeReg(self, addr, data):
-        self.transport.writeAP((self.ap_num << AP_SEL_SHIFT) | addr, data)
+        self.dp.writeAP((self.ap_num << APSEL_SHIFT) | addr, data)
 
 class MEM_AP(AccessPort):
+    def __init__(self, dp, ap_num):
+        super(MEM_AP, self).__init__(dp, ap_num)
+        self.csw = -1
+
     def init(self, bus_accessible=True):
         super(MEM_AP, self).init(bus_accessible)
 
@@ -86,11 +114,86 @@ class MEM_AP(AccessPort):
             self.auto_increment_page_size = 0x400
             logging.warning("Unknown AHB IDR: 0x%x" % self.idr)
 
+    def writeMem(self, addr, data, transfer_size=32):
+        self.writeReg(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
+        if transfer_size == 8:
+            data = data << ((addr & 0x03) << 3)
+        elif transfer_size == 16:
+            data = data << ((addr & 0x02) << 3)
+
+        try:
+#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['TAR'])
+#             self.link.write_reg(reg, addr)
+#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['DRW'])
+#             self.link.write_reg(reg, data)
+            self.writeReg(AP_REG['TAR'], addr)
+            self.writeReg(AP_REG['DRW'], data)
+        except DAPAccess.Error as error:
+            self._handle_error(error)
+            raise
+
+    def readMem(self, addr, transfer_size=32, now=True):
+        res = None
+        try:
+            self.writeReg(AP_REG['CSW'], CSW_VALUE |
+                         TRANSFER_SIZE[transfer_size])
+#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['TAR'])
+#             self.link.write_reg(reg, addr)
+#             reg = _ap_addr_to_reg(READ | AP_ACC | AP_REG['DRW'])
+#             result_cb = self.link.read_reg(reg, now=False)
+            self.writeReg(AP_REG['TAR'], addr)
+            result_cb = self.readReg(AP_REG['DRW'], now=False)
+        except DAPAccess.Error as error:
+            self._handle_error(error)
+            raise
+
+        def readMemCb():
+            try:
+                res = result_cb()
+                if transfer_size == 8:
+                    res = (res >> ((addr & 0x03) << 3) & 0xff)
+                elif transfer_size == 16:
+                    res = (res >> ((addr & 0x02) << 3) & 0xffff)
+            except DAPAccess.Error as error:
+                self._handle_error(error)
+                raise
+            return res
+
+        if now:
+            return readMemCb()
+        else:
+            return readMemCb
+
+    # write aligned word ("data" are words)
+    def writeBlock32(self, addr, data):
+        # put address in TAR
+        self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.writeReg(AP_REG['TAR'], addr)
+        try:
+            reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['DRW'])
+            self.link.reg_write_repeat(len(data), reg, data)
+        except DAPAccess.Error as error:
+            self._handle_error(error)
+            raise
+
+    # read aligned word (the size is in words)
+    def readBlock32(self, addr, size):
+        # put address in TAR
+        self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.writeReg(AP_REG['TAR'], addr)
+        try:
+            reg = _ap_addr_to_reg(READ | AP_ACC | AP_REG['DRW'])
+            resp = self.link.reg_read_repeat(size, reg)
+        except DAPAccess.Error as error:
+            self._handle_error(error)
+            raise
+        return resp
+
     ## @brief Write a single memory location.
     #
     # By default the transfer size is a word
     def writeMemory(self, addr, value, transfer_size=32):
-        self.transport.writeMem(addr, value, transfer_size, ap_num=self.ap_num)
+        self.writeMem(addr, value, transfer_size)
 
     def write32(self, addr, value):
         """
@@ -110,12 +213,12 @@ class MEM_AP(AccessPort):
         """
         self.writeMemory(addr, value, 8)
 
-    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
+    def readMemory(self, addr, transfer_size=32, now=True):
         """
         read a memory location. By default, a word will
         be read
         """
-        return self.transport.readMem(addr, transfer_size, mode, ap_num=self.ap_num)
+        return self.readMem(addr, transfer_size, now)
 
     def read32(self, addr):
         """
@@ -231,7 +334,7 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            self.transport.writeBlock32(addr, data[:n/4], ap_num=self.ap_num)
+            self.writeBlock32(addr, data[:n/4])
             data = data[n/4:]
             size -= n/4
             addr += n
@@ -246,10 +349,17 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            resp += self.transport.readBlock32(addr, n/4, ap_num=self.ap_num)
+            resp += self.readBlock32(addr, n/4)
             size -= n/4
             addr += n
         return resp
+
+    def _handle_error(self, error):
+        # Invalidate cached registers
+        self.csw = -1
+        # Clear sticky error for Fault errors only
+        if isinstance(error, DAPAccess.TransferFaultError):
+            self.dp.clear_sticky_err()
 
 class AHB_AP(MEM_AP):
     pass

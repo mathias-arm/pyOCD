@@ -45,8 +45,8 @@ FCF_ADDR = 0x400
 
 class Kinetis(CoreSightTarget):
 
-    def __init__(self, transport, memoryMap=None):
-        super(Kinetis, self).__init__(transport, memoryMap)
+    def __init__(self, link, memoryMap=None):
+        super(Kinetis, self).__init__(link, memoryMap)
         self.mdm_idr = 0
         self.do_auto_unlock = True
 
@@ -70,16 +70,16 @@ class Kinetis(CoreSightTarget):
             if self.do_auto_unlock:
                 logging.warning("%s in secure state: will try to unlock via mass erase", self.part_number)
                 # keep the target in reset until is had been erased and halted
-                self.transport.assertReset(True)
+                self.dp.assert_reset(True)
                 if not self.massErase():
-                    self.transport.assertReset(False)
+                    self.dp.assert_reset(False)
                     logging.error("%s: mass erase failed", self.part_number)
                     raise Exception("unable to unlock device")
                 # Use the MDM to keep the target halted after reset has been released
                 self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST)
                 # Enable debug
                 self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN)
-                self.transport.assertReset(False)
+                self.dp.assert_reset(False)
                 while self.mdm_ap.readReg(MDM_STATUS) & MDM_STATUS_CORE_HALTED != MDM_STATUS_CORE_HALTED:
                     logging.debug("Waiting for mdm halt (erase)")
                     sleep(0.01)

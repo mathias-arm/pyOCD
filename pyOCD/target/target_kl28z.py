@@ -20,7 +20,6 @@ from .memory_map import (FlashRegion, RamRegion, RomRegion, MemoryMap)
 import logging
 from ..coresight import ap
 from ..coresight.cortex_m import CortexM
-from ..transport.transport import Transport
 from .coresight_target import SVDFile
 import os.path
 
@@ -50,8 +49,8 @@ class KL28x(Kinetis):
         RamRegion(name='usb ram', start=0x40100000, length=0x800)
         )
 
-    def __init__(self, transport):
-        super(KL28x, self).__init__(transport, self.singleMap)
+    def __init__(self, link):
+        super(KL28x, self).__init__(link, self.singleMap)
         self.mdm_idr = 0x001c0020
         self.is_dual_core = False
 
@@ -76,7 +75,7 @@ class KL28x(Kinetis):
             self.core1_ap.init(True)
 
             # Add second core. It is held in reset until released by software.
-            self.core1 = CortexM(self.transport, self.dp, self.core1_ap, self.memory_map, core_num=1)
+            self.core1 = CortexM(self.link, self.dp, self.core1_ap, self.memory_map, core_num=1)
             self.cores.append(self.core1)
             self.core1.init(bus_accessible=True)
 

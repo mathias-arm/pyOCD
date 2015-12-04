@@ -28,7 +28,7 @@ import pyOCD
 from pyOCD import __version__
 from pyOCD.board import MbedBoard
 from pyOCD.target import target_kinetis
-from pyOCD.transport.transport import Transport
+from pyOCD.pyDAPAccess import DAPAccess
 from pyOCD.target.target import Target
 from pyOCD.utility import mask
 
@@ -287,12 +287,11 @@ class PyOCDConsole(object):
             # Run command.
             handler = self.tool.command_list[cmd]
             handler(args)
-        except Transport.TransferError:
-            print "Error: transfer failed"
-#             traceback.print_exc()
         except ValueError:
             print "Error: invalid argument"
             traceback.print_exc()
+        except DAPAccess.TransferError:
+            print "Error: transfer failed"
         except ToolError as e:
             print "Error:", e
         except Exception as e:
@@ -415,7 +414,7 @@ class PyOCDTool(object):
                 traceback.print_exc()
 
             self.target = self.board.target
-            self.transport = self.board.transport
+            self.link = self.board.link
             self.flash = self.board.flash
 
             self.svd_device = self.target.svd_device
@@ -426,7 +425,7 @@ class PyOCDTool(object):
 
             # Halt if requested.
             if self.args.halt:
-                self.handle_halt()
+                self.handle_halt([])
 
             # Handle a device with flash security enabled.
             self.didErase = False
@@ -458,7 +457,7 @@ class PyOCDTool(object):
             self.exitCode = 0
         except ValueError:
             print "Error: invalid argument"
-        except Transport.TransferError:
+        except DAPAccess.TransferError:
             print "Error: transfer failed"
             self.exitCode = 2
         except ToolError as e:
@@ -707,9 +706,8 @@ class PyOCDTool(object):
         except:
             print "Error: invalid frequency"
             return 1
-        self.transport.setClock(freq_Hz)
-
-        if self.transport.mode == pyOCD.transport.cmsis_dap.DAP_MODE_SWD:
+        self.link.set_clock(freq_Hz)
+        if self.link.get_swj_mode() == DAPAccess.PORT.SWD:
             swd_jtag = 'SWD'
         else:
             swd_jtag = 'JTAG'
@@ -731,7 +729,7 @@ class PyOCDTool(object):
             env = {
                     'board' : self.board,
                     'target' : self.target,
-                    'transport' : self.transport,
+                    'link' : self.link,
                     'flash' : self.flash,
                 }
             result = eval(args, globals(), env)

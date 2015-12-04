@@ -15,8 +15,6 @@
  limitations under the License.
 """
 
-from ..transport.transport import Transport
-
 class Target(object):
 
     TARGET_RUNNING = 1   # Core is executing code.
@@ -37,12 +35,13 @@ class Target(object):
     WATCHPOINT_WRITE = 2
     WATCHPOINT_READ_WRITE = 3
 
-    def __init__(self, transport, memoryMap=None):
-        self.transport = transport
+    def __init__(self, link, memoryMap=None):
+        self.link = link
         self.flash = None
         self.part_number = ""
         self.memory_map = memoryMap
         self.halt_on_connect = True
+        self.has_fpu = False
         self._svd_location = None
         self._svd_device = None
 
@@ -66,10 +65,10 @@ class Target(object):
         raise NotImplementedError()
 
     def info(self, request):
-        return self.transport.info(request)
+        return self.link.info(request)
 
     def flush(self):
-        self.transport.flush()
+        self.link.flush()
 
     def readIDCode(self):
         raise NotImplementedError()
@@ -98,20 +97,20 @@ class Target(object):
     def write8(self, addr, value):
         self.writeMemory(addr, value, 8)
 
-    def readMemory(self, addr, transfer_size=32, mode=Transport.READ_NOW):
+    def readMemory(self, addr, transfer_size=32, now=True):
         raise NotImplementedError()
 
     # @brief Shorthand to read a 32-bit word.
-    def read32(self, addr):
-        return self.readMemory(addr, 32)
+    def read32(self, addr, now=True):
+        return self.readMemory(addr, 32, now)
 
     # @brief Shorthand to read a 16-bit halfword.
-    def read16(self, addr):
-        return self.readMemory(addr, 16)
+    def read16(self, addr, now=True):
+        return self.readMemory(addr, 16, now)
 
     # @brief Shorthand to read a byte.
-    def read8(self, addr):
-        return self.readMemory(addr, 8)
+    def read8(self, addr, now=True):
+        return self.readMemory(addr, 8, now)
 
     def writeBlockMemoryUnaligned8(self, addr, value):
         raise NotImplementedError()

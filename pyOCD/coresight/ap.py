@@ -357,9 +357,7 @@ class MEM_AP(AccessPort):
     def _handle_error(self, error):
         # Invalidate cached registers
         self.csw = -1
-        # Clear sticky error for Fault errors only
-        if isinstance(error, DAPAccess.TransferFaultError):
-            self.dp.clear_sticky_err()
+        self.dp._handle_error(error)
 
 class AHB_AP(MEM_AP):
     pass

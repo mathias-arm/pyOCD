@@ -555,17 +555,17 @@ class CortexM(Target):
         else:
             self.dp.reset()
 
-        # Now wait for the system to come out of reset. Keep trying to read the DHCSR until
-        # we get a good response, or we time out.
+        # Now wait for the system to come out of reset. Keep reading the DHCSR until
+        # we get a good response with S_RESET_ST cleared, or we time out.
         startTime = time()
         while time() - startTime < 2.0:
             try:
-                self.read32(CortexM.DHCSR)
+                dhcsr = self.read32(CortexM.DHCSR)
+                if (dhcsr & CortexM.S_RESET_ST) == 0:
+                    break
             except DAPAccess.TransferError:
                 self.dp.flush()
                 sleep(0.01)
-            else:
-                break
 
     def resetStopOnReset(self, software_reset=None):
         """

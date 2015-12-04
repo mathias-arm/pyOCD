@@ -22,6 +22,7 @@ from ..coresight import ap
 from ..coresight.cortex_m import CortexM
 from .coresight_target import SVDFile
 import os.path
+from time import (time, sleep)
 
 SIM_SDID = 0x40075024
 SIM_SDID_KEYATTR_MASK = 0x70
@@ -31,6 +32,8 @@ KEYATTR_DUAL_CORE = 1
 
 RCM_MR = 0x4007f010
 RCM_MR_BOOTROM_MASK = 0x6
+
+RECOVER_TIMEOUT = 1.0 # 1 second
 
 class KL28x(Kinetis):
 
@@ -60,6 +63,8 @@ class KL28x(Kinetis):
     def init(self):
         super(KL28x, self).init()
 
+        self.dp.fault_recover_handler = self.recover_from_fault
+
         # Check if this is the dual core part.
         sdid = self.readMemory(SIM_SDID)
         keyattr = (sdid & SIM_SDID_KEYATTR_MASK) >> SIM_SDID_KEYATTR_SHIFT
@@ -81,6 +86,20 @@ class KL28x(Kinetis):
 
         # Disable ROM vector table remapping.
         self.write32(RCM_MR, RCM_MR_BOOTROM_MASK)
+
+    def recover_from_fault(self, error):
+        logging.debug("KL28x recovery handler invoked")
+        # Keep trying to read the DHCSR until we get a good response, or we time out.
+        startTime = time()
+        while time() - startTime < RECOVER_TIMEOUT:
+            try:
+                self.read32(CortexM.DHCSR)
+            except DAPAccess.TransferError:
+                self.dp.flush()
+                sleep(0.001)
+            else:
+                break
+
 
 
 

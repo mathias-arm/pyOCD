@@ -76,12 +76,21 @@ class DebugPort(object):
         self.link = link
         self.csw = -1
         self.dp_select = -1
+        self._fault_recovery_handler = None
 
     def init(self):
         # Connect to the target.
         self.link.connect()
         self.readIDCode()
         self.clear_sticky_err()
+
+    @property
+    def fault_recovery_handler(self):
+        return self._fault_recovery_handler
+
+    @fault_recovery_handler.setter
+    def fault_recovery_handler(self, handler):
+        self._fault_recovery_handler = handler
 
     def readIDCode(self):
         # Read ID register and get DP version
@@ -234,6 +243,9 @@ class DebugPort(object):
         # Clear sticky error for Fault errors only
         if isinstance(error, DAPAccess.TransferFaultError):
             self.clear_sticky_err()
+        # Let a target-specific handler deal with errors.
+        if self._fault_recovery_handler:
+            self._fault_recovery_handler(error)
 
     def clear_sticky_err(self):
         mode = self.link.get_swj_mode()

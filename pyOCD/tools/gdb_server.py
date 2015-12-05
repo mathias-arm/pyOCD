@@ -178,12 +178,12 @@ class GDBServerTool(object):
                     'info' : mbed.getInfo(),
                     'board_name' : mbed.getBoardName(),
                     'target' : mbed.getTargetType(),
-                    'vendor_name' : mbed.interface.vendor_name,
-                    'product_name' : mbed.interface.product_name,
+                    'vendor_name' : "", #mbed.interface.vendor_name,
+                    'product_name' : "", #mbed.interface.product_name,
                     }
                 boards.append(d)
 
-            print json.dumps(obj, indent=4) #, sys.stdout)
+            print json.dumps(obj, indent=4)
         else:
             index = 0
             if len(all_mbeds) > 0:

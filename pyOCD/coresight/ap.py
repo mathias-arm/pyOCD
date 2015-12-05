@@ -17,16 +17,9 @@
 
 from ..pyDAPAccess import DAPAccess
 from .rom_table import ROMTable
-from .dap import (AP_REG, _ap_addr_to_reg, READ, WRITE, AP_ACC, LOG_DAP)
+from .dap import (AP_REG, _ap_addr_to_reg, READ, WRITE, AP_ACC, APSEL_SHIFT, LOG_DAP)
 from ..utility import conversion
 import logging
-
-AP_CSW = 0x00
-AP_TAR = 0x04
-AP_DRW = 0x0C
-AP_IDR = 0xFC
-
-APSEL_SHIFT = 24
 
 AP_ROM_TABLE_ADDR_REG = 0xf8
 AP_ROM_TABLE_FORMAT_MASK = 0x2
@@ -79,7 +72,7 @@ class AccessPort(object):
             self.logger = self.dp.logger.getChild('ap%d' % ap_num)
 
     def init(self, bus_accessible=True):
-        self.idr = self.readReg(AP_IDR)
+        self.idr = self.readReg(AP_REG['IDR'])
 
         # Init ROM table
         self.rom_addr = self.readReg(AP_ROM_TABLE_ADDR_REG)
@@ -101,24 +94,14 @@ class AccessPort(object):
 class MEM_AP(AccessPort):
     def __init__(self, dp, ap_num):
         super(MEM_AP, self).__init__(dp, ap_num)
-        self.csw = -1
+        self.auto_increment_page_size = 4
 
-    def init(self, bus_accessible=True):
-        super(MEM_AP, self).init(bus_accessible)
-
-        if self.idr in AHB_IDR_TO_WRAP_SIZE:
-            self.auto_increment_page_size = AHB_IDR_TO_WRAP_SIZE[self.idr]
-        else:
-            # If unknown use the smallest size supported by all targets.
-            # A size smaller than the supported size will decrease performance
-            # due to the extra address writes, but will not create any
-            # read/write errors.
-            self.auto_increment_page_size = 0x400
-            logging.warning("Unknown AHB IDR: 0x%x" % self.idr)
-
-    def writeMem(self, addr, data, transfer_size=32):
+    ## @brief Write a single memory location.
+    #
+    # By default the transfer size is a word
+    def writeMemory(self, addr, data, transfer_size=32):
+        num = self.dp.next_access_number
         if LOG_DAP:
-            num = self.dp.access_number
             self.logger.info("writeMem:%06d (addr=0x%08x, size=%d) = 0x%08x {", num, addr, transfer_size, data)
         self.writeReg(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
         if transfer_size == 8:
@@ -127,10 +110,6 @@ class MEM_AP(AccessPort):
             data = data << ((addr & 0x02) << 3)
 
         try:
-#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['TAR'])
-#             self.link.write_reg(reg, addr)
-#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['DRW'])
-#             self.link.write_reg(reg, data)
             self.writeReg(AP_REG['TAR'], addr)
             self.writeReg(AP_REG['DRW'], data)
         except DAPAccess.Error as error:
@@ -139,18 +118,17 @@ class MEM_AP(AccessPort):
         if LOG_DAP:
             self.logger.info("writeMem:%06d }", num)
 
-    def readMem(self, addr, transfer_size=32, now=True):
+    ## @brief Read a memory location.
+    #
+    # By default, a word will be read.
+    def readMemory(self, addr, transfer_size=32, now=True):
+        num = self.dp.next_access_number
         if LOG_DAP:
-            num = self.dp.access_number
             self.logger.info("readMem:%06d (addr=0x%08x, size=%d) {", num, addr, transfer_size)
         res = None
         try:
             self.writeReg(AP_REG['CSW'], CSW_VALUE |
                          TRANSFER_SIZE[transfer_size])
-#             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['TAR'])
-#             self.link.write_reg(reg, addr)
-#             reg = _ap_addr_to_reg(READ | AP_ACC | AP_REG['DRW'])
-#             result_cb = self.link.read_reg(reg, now=False)
             self.writeReg(AP_REG['TAR'], addr)
             result_cb = self.readReg(AP_REG['DRW'], now=False)
         except DAPAccess.Error as error:
@@ -179,8 +157,8 @@ class MEM_AP(AccessPort):
 
     # write aligned word ("data" are words)
     def writeBlock32(self, addr, data):
+        num = self.dp.next_access_number
         if LOG_DAP:
-            num = self.dp.access_number
             self.logger.info("writeBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, len(data))
         # put address in TAR
         self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
@@ -196,8 +174,8 @@ class MEM_AP(AccessPort):
 
     # read aligned word (the size is in words)
     def readBlock32(self, addr, size):
+        num = self.dp.next_access_number
         if LOG_DAP:
-            num = self.dp.access_number
             self.logger.info("readBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, size)
         # put address in TAR
         self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
@@ -212,60 +190,33 @@ class MEM_AP(AccessPort):
             self.logger.info("readBlock32:%06d }", num)
         return resp
 
-    ## @brief Write a single memory location.
-    #
-    # By default the transfer size is a word
-    def writeMemory(self, addr, value, transfer_size=32):
-        self.writeMem(addr, value, transfer_size)
-
+    ## @brief Shorthand to write a 32-bit word.
     def write32(self, addr, value):
-        """
-        Shorthand to write a 32-bit word.
-        """
         self.writeMemory(addr, value, 32)
 
+    ## @brief Shorthand to write a 16-bit halfword.
     def write16(self, addr, value):
-        """
-        Shorthand to write a 16-bit halfword.
-        """
         self.writeMemory(addr, value, 16)
 
+    ## @brief Shorthand to write a byte.
     def write8(self, addr, value):
-        """
-        Shorthand to write a byte.
-        """
         self.writeMemory(addr, value, 8)
 
-    def readMemory(self, addr, transfer_size=32, now=True):
-        """
-        read a memory location. By default, a word will
-        be read
-        """
-        return self.readMem(addr, transfer_size, now)
+    ## @brief Shorthand to read a 32-bit word.
+    def read32(self, addr, now=True):
+        return self.readMemory(addr, 32, now)
 
-    def read32(self, addr):
-        """
-        Shorthand to read a 32-bit word.
-        """
-        return self.readMemory(addr, 32)
+    ## @brief Shorthand to read a 16-bit halfword.
+    def read16(self, addr, now=True):
+        return self.readMemory(addr, 16, now)
 
-    def read16(self, addr):
-        """
-        Shorthand to read a 16-bit halfword.
-        """
-        return self.readMemory(addr, 16)
+    ## @brief Shorthand to read a byte.
+    def read8(self, addr, now=True):
+        return self.readMemory(addr, 8, now)
 
-    def read8(self, addr):
-        """
-        Shorthand to read a byte.
-        """
-        return self.readMemory(addr, 8)
-
+    ## @brief Read a block of unaligned bytes in memory.
+    # @return an array of byte values
     def readBlockMemoryUnaligned8(self, addr, size):
-        """
-        read a block of unaligned bytes in memory. Returns
-        an array of byte values
-        """
         res = []
 
         # try to read 8bits data
@@ -305,10 +256,8 @@ class MEM_AP(AccessPort):
 
         return res
 
+    ## @brief Write a block of unaligned bytes in memory.
     def writeBlockMemoryUnaligned8(self, addr, data):
-        """
-        write a block of unaligned bytes in memory.
-        """
         size = len(data)
         idx = 0
 
@@ -378,12 +327,21 @@ class MEM_AP(AccessPort):
         return resp
 
     def _handle_error(self, error, num):
-        # Invalidate cached registers
-        self.csw = -1
         self.dp._handle_error(error, num)
 
 class AHB_AP(MEM_AP):
-    pass
+    def init(self, bus_accessible=True):
+        super(AHB_AP, self).init(bus_accessible)
+
+        if self.idr in AHB_IDR_TO_WRAP_SIZE:
+            self.auto_increment_page_size = AHB_IDR_TO_WRAP_SIZE[self.idr]
+        else:
+            # If unknown use the smallest size supported by all targets.
+            # A size smaller than the supported size will decrease performance
+            # due to the extra address writes, but will not create any
+            # read/write errors.
+            self.auto_increment_page_size = 0x400
+            logging.warning("Unknown AHB IDR: 0x%x" % self.idr)
 
 
 

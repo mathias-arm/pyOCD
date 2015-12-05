@@ -17,7 +17,7 @@
 
 from ..pyDAPAccess import DAPAccess
 from .rom_table import ROMTable
-from .dap import (AP_REG, _ap_addr_to_reg, READ, WRITE, AP_ACC)
+from .dap import (AP_REG, _ap_addr_to_reg, READ, WRITE, AP_ACC, LOG_DAP)
 from ..utility import conversion
 import logging
 
@@ -75,6 +75,8 @@ class AccessPort(object):
         self.rom_addr = 0
         self.has_rom_table = False
         self.rom_table = None
+        if LOG_DAP:
+            self.logger = self.dp.logger.getChild('ap%d' % ap_num)
 
     def init(self, bus_accessible=True):
         self.idr = self.readReg(AP_IDR)
@@ -115,6 +117,9 @@ class MEM_AP(AccessPort):
             logging.warning("Unknown AHB IDR: 0x%x" % self.idr)
 
     def writeMem(self, addr, data, transfer_size=32):
+        if LOG_DAP:
+            num = self.dp.access_number
+            self.logger.info("writeMem:%06d (addr=0x%08x, size=%d) = 0x%08x {", num, addr, transfer_size, data)
         self.writeReg(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
         if transfer_size == 8:
             data = data << ((addr & 0x03) << 3)
@@ -129,10 +134,15 @@ class MEM_AP(AccessPort):
             self.writeReg(AP_REG['TAR'], addr)
             self.writeReg(AP_REG['DRW'], data)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
+        if LOG_DAP:
+            self.logger.info("writeMem:%06d }", num)
 
     def readMem(self, addr, transfer_size=32, now=True):
+        if LOG_DAP:
+            num = self.dp.access_number
+            self.logger.info("readMem:%06d (addr=0x%08x, size=%d) {", num, addr, transfer_size)
         res = None
         try:
             self.writeReg(AP_REG['CSW'], CSW_VALUE |
@@ -144,7 +154,7 @@ class MEM_AP(AccessPort):
             self.writeReg(AP_REG['TAR'], addr)
             result_cb = self.readReg(AP_REG['DRW'], now=False)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
 
         def readMemCb():
@@ -154,18 +164,24 @@ class MEM_AP(AccessPort):
                     res = (res >> ((addr & 0x03) << 3) & 0xff)
                 elif transfer_size == 16:
                     res = (res >> ((addr & 0x02) << 3) & 0xffff)
+                if LOG_DAP:
+                    self.logger.info("readMem:%06d %s(addr=0x%08x, size=%d) -> 0x%08x }", num, "" if now else "...", addr, transfer_size, res)
             except DAPAccess.Error as error:
-                self._handle_error(error)
+                self._handle_error(error, num)
                 raise
             return res
 
         if now:
-            return readMemCb()
+            result = readMemCb()
+            return result
         else:
             return readMemCb
 
     # write aligned word ("data" are words)
     def writeBlock32(self, addr, data):
+        if LOG_DAP:
+            num = self.dp.access_number
+            self.logger.info("writeBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, len(data))
         # put address in TAR
         self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
         self.writeReg(AP_REG['TAR'], addr)
@@ -173,11 +189,16 @@ class MEM_AP(AccessPort):
             reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['DRW'])
             self.link.reg_write_repeat(len(data), reg, data)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
+        if LOG_DAP:
+            self.logger.info("writeBlock32:%06d }", num)
 
     # read aligned word (the size is in words)
     def readBlock32(self, addr, size):
+        if LOG_DAP:
+            num = self.dp.access_number
+            self.logger.info("readBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, size)
         # put address in TAR
         self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
         self.writeReg(AP_REG['TAR'], addr)
@@ -185,8 +206,10 @@ class MEM_AP(AccessPort):
             reg = _ap_addr_to_reg(READ | AP_ACC | AP_REG['DRW'])
             resp = self.link.reg_read_repeat(size, reg)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
+        if LOG_DAP:
+            self.logger.info("readBlock32:%06d }", num)
         return resp
 
     ## @brief Write a single memory location.
@@ -354,10 +377,10 @@ class MEM_AP(AccessPort):
             addr += n
         return resp
 
-    def _handle_error(self, error):
+    def _handle_error(self, error, num):
         # Invalidate cached registers
         self.csw = -1
-        self.dp._handle_error(error)
+        self.dp._handle_error(error, num)
 
 class AHB_AP(MEM_AP):
     pass

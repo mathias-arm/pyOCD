@@ -17,6 +17,9 @@
 
 from ..pyDAPAccess import DAPAccess
 import logging
+import logging.handlers
+import os
+import os.path
 
 # !! This value are A[2:3] and not A[3:2]
 DP_REG = {'IDCODE': DAPAccess.REG.DP_0x0,
@@ -68,15 +71,47 @@ CDBGPWRUPREQ = 0x10000000
 TRNNORMAL = 0x00000000
 MASKLANE = 0x00000f00
 
+# Set to True to enable logging of all DP and AP accesses.
+LOG_DAP = False
+
 def _ap_addr_to_reg(addr):
     return DAPAccess.REG(4 + ((addr & A32) >> 2))
 
 class DebugPort(object):
+    # DAP log file name.
+    DAP_LOG_FILE = "pyocd_dap.log"
+
     def __init__(self, link):
         self.link = link
         self.csw = -1
         self.dp_select = -1
         self._fault_recovery_handler = None
+        self._access_number = 0
+        if LOG_DAP:
+            self._setup_logging()
+
+    @property
+    def access_number(self):
+        self._access_number += 1
+        return self._access_number
+
+    ## @brief Set up DAP logging.
+    #
+    # A memory handler is created that buffers log records before flushing them to a file
+    # handler that writes to DAP_LOG_FILE. This improves logging performance by writing to the
+    # log file less often.
+    def _setup_logging(self):
+        cwd = os.getcwd()
+        logfile = os.path.join(cwd, self.DAP_LOG_FILE)
+        logging.info("dap logfile: %s", logfile)
+        self.logger = logging.getLogger('dap')
+        self.logger.propagate = False
+        formatter = logging.Formatter('%(relativeCreated)010dms:%(levelname)s:%(name)s:%(message)s')
+        fileHandler = logging.FileHandler(logfile, mode='w+', delay=True)
+        fileHandler.setFormatter(formatter)
+        memHandler = logging.handlers.MemoryHandler(capacity=128, target=fileHandler)
+        self.logger.addHandler(memHandler)
+        self.logger.setLevel(logging.DEBUG)
 
     def init(self):
         # Connect to the target.
@@ -155,63 +190,84 @@ class DebugPort(object):
 
     def readDP(self, addr, now=True):
         assert addr in DAPAccess.REG
+        if LOG_DAP:
+            num = self.access_number
 
         try:
             result_cb = self.link.read_reg(addr, now=False)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
 
         def readDPCb():
             try:
-                return result_cb()
+                result = result_cb()
+                if LOG_DAP:
+                    self.logger.info("readDP:%06d %s(addr=0x%08x) -> 0x%08x", num, "" if now else "...", addr.value, result)
+                return result
             except DAPAccess.Error as error:
-                self._handle_error(error)
+                self._handle_error(error, num)
                 raise
 
         if now:
             return readDPCb()
         else:
+            if LOG_DAP:
+                self.logger.info("readDP:%06d (addr=0x%08x) -> ...", num, addr.value)
             return readDPCb
 
     def writeDP(self, addr, data):
         assert addr in DAPAccess.REG
+        if LOG_DAP:
+            num = self.access_number
         if addr == DP_REG['SELECT']:
             if data == self.dp_select:
+                if LOG_DAP:
+                    self.logger.info("writeDP:%06d cached (addr=0x%08x) = 0x%08x", num, addr.value, data)
                 return
             self.dp_select = data
 
         try:
+            if LOG_DAP:
+                self.logger.info("writeDP:%06d (addr=0x%08x) = 0x%08x", num, addr.value, data)
             self.link.write_reg(addr, data)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
         return True
 
     def writeAP(self, addr, data):
         assert type(addr) in (int, long)
+        if LOG_DAP:
+            num = self.access_number
         ap_sel = addr & APSEL
         bank_sel = addr & APBANKSEL
         self.writeDP(DP_REG['SELECT'], ap_sel | bank_sel)
 
-        # TODO: move csw caching to MEM_AP
+        # TODO: move csw caching to MEM_AP, move before writeDP
         if addr == AP_REG['CSW']:
             if data == self.csw:
+                if LOG_DAP:
+                    self.logger.info("writeAP:%06d cached (addr=0x%08x) = 0x%08x", num, addr, data)
                 return
             self.csw = data
 
         ap_reg = _ap_addr_to_reg(WRITE | AP_ACC | (addr & A32))
         try:
+            if LOG_DAP:
+                self.logger.info("writeAP:%06d (addr=0x%08x) = 0x%08x", num, addr, data)
             self.link.write_reg(ap_reg, data)
 
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
 
         return True
 
     def readAP(self, addr, now=True):
         assert type(addr) in (int, long)
+        if LOG_DAP:
+            num = self.access_number
         res = None
         ap_reg = _ap_addr_to_reg(READ | AP_ACC | (addr & A32))
 
@@ -221,22 +277,29 @@ class DebugPort(object):
             self.writeDP(DP_REG['SELECT'], ap_sel | bank_sel)
             result_cb = self.link.read_reg(ap_reg, now=False)
         except DAPAccess.Error as error:
-            self._handle_error(error)
+            self._handle_error(error, num)
             raise
 
         def readAPCb():
             try:
-                return result_cb()
+                result = result_cb()
+                if LOG_DAP:
+                    self.logger.info("readAP:%06d %s(addr=0x%08x) -> 0x%08x", num, "" if now else "...", addr, result)
+                return result
             except DAPAccess.Error as error:
-                self._handle_error(error)
+                self._handle_error(error, num)
                 raise
 
         if now:
             return readAPCb()
         else:
+            if LOG_DAP:
+                self.logger.info("readAP:%06d (addr=0x%08x) -> ...", num, addr)
             return readAPCb
 
-    def _handle_error(self, error):
+    def _handle_error(self, error, num):
+        if LOG_DAP:
+            self.logger.info("error:%06d %s", num, error)
         # Invalidate cached registers
         self.csw = -1
         self.dp_select = -1

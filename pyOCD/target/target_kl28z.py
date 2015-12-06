@@ -76,12 +76,12 @@ class KL28x(Kinetis):
 
             # Add second core's AHB-AP.
             self.core1_ap = ap.AHB_AP(self.dp, 2)
-            self.aps.append(self.core1_ap)
+            self.aps[2] = self.core1_ap
             self.core1_ap.init(True)
 
             # Add second core. It is held in reset until released by software.
             self.core1 = CortexM(self.link, self.dp, self.core1_ap, self.memory_map, core_num=1)
-            self.cores.append(self.core1)
+            self.cores[1] = self.core1
             self.core1.init(bus_accessible=True)
 
         # Disable ROM vector table remapping.

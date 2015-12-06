@@ -292,6 +292,7 @@ class PyOCDConsole(object):
             traceback.print_exc()
         except DAPAccess.TransferError:
             print "Error: transfer failed"
+            traceback.print_exc()
         except ToolError as e:
             print "Error:", e
         except Exception as e:
@@ -412,6 +413,8 @@ class PyOCDTool(object):
             except Exception as e:
                 print "Exception while initing board: %s" % e
                 traceback.print_exc()
+                self.exitCode = 1
+                return self.exitCode
 
             self.target = self.board.target
             self.link = self.board.link
@@ -459,6 +462,7 @@ class PyOCDTool(object):
             print "Error: invalid argument"
         except DAPAccess.TransferError:
             print "Error: transfer failed"
+            traceback.print_exc()
             self.exitCode = 2
         except ToolError as e:
             print "Error:", e

@@ -17,23 +17,11 @@
 
 from .target import Target
 from ..coresight import (dap, ap, cortex_m)
+from ..svd import (SVDFile, SVDLoader)
 import threading
 from cmsis_svd.parser import SVDParser
 import logging
 from xml.etree.ElementTree import (Element, SubElement, tostring)
-
-class SVDFile(object):
-    def __init__(self, filename=None, vendor=None, is_local=False):
-        self.filename = filename
-        self.vendor = vendor
-        self.is_local = is_local
-        self.device = None
-
-    def load(self):
-        if self.is_local:
-            self.device = SVDParser.for_xml_file(self.filename).get_device()
-        else:
-            self.device = SVDParser.for_packaged_svd(self.vendor, self.filename).get_device()
 
 ##
 # @brief Debug target that uses CoreSight classes.
@@ -42,8 +30,8 @@ class CoreSightTarget(Target):
     def __init__(self, link, memoryMap=None):
         super(CoreSightTarget, self).__init__(link, memoryMap)
         self.part_number = self.__class__.__name__
-        self.cores = []
-        self.aps = []
+        self.cores = {}
+        self.aps = {}
         self.dp = dap.DebugPort(link)
         self._selected_core = 0
         self._svd_load_thread = None
@@ -53,7 +41,7 @@ class CoreSightTarget(Target):
         return self.cores[self._selected_core]
 
     def select_core(self, num):
-        if num >= len(self.cores):
+        if not self.cores.has_key(num):
             raise ValueError("invalid core number")
         logging.debug("selected core #%d" % num)
         self._selected_core = num
@@ -63,22 +51,21 @@ class CoreSightTarget(Target):
     def svd_device(self):
         if not self._svd_device and self._svd_load_thread:
             logging.debug("Waiting for SVD load to complete")
-            self._svd_load_thread.join()
+            self._svd_device = self._svd_load_thread.device
         return self._svd_device
 
     def loadSVD(self):
-        if not self._svd_device and self._svd_location:
-            # Spawn thread to load SVD in background.
-            self._svd_load_thread = threading.Thread(target=self._load_svd_thread, name='load-svd')
-            self._svd_load_thread.start()
+        def svdLoadCompleted(svdDevice):
+            logging.debug("Completed loading SVD")
+            self._svd_device = svdDevice
+            self._svd_load_thread = None
 
-    ## @brief Thread to read an SVD file in the background.
-    def _load_svd_thread(self):
-        logging.debug("Started loading SVD")
-        self._svd_location.load()
-        logging.debug("Completed loading SVD")
-        self._svd_device = self._svd_location.device
-        self._svd_load_thread = None
+        if not self._svd_device and self._svd_location:
+            logging.debug("Started loading SVD")
+
+            # Spawn thread to load SVD in background.
+            self._svd_load_thread = SVDLoader(self._svd_location, svdLoadCompleted)
+            self._svd_load_thread.load()
 
     def init(self, initial_setup=True, bus_accessible=True):
         # Start loading the SVD file
@@ -89,12 +76,12 @@ class CoreSightTarget(Target):
         self.dp.powerUpDebug()
 
         # Create an AHB-AP for the CPU.
-        self.aps.append(ap.AHB_AP(self.dp, 0))
+        self.aps[0] = ap.AHB_AP(self.dp, 0)
         self.aps[0].init(bus_accessible)
 
         # Create CortexM core.
-        self.cores.append(cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map))
-        self.selected_core.init(initial_setup=initial_setup, bus_accessible=bus_accessible)
+        self.cores[0] = cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map)
+        self.cores[0].init(initial_setup=initial_setup, bus_accessible=bus_accessible)
 
     def readIDCode(self):
         return self.dp.dpidr

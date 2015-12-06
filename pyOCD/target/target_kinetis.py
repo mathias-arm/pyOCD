@@ -48,6 +48,7 @@ class Kinetis(CoreSightTarget):
     def __init__(self, link, memoryMap=None):
         super(Kinetis, self).__init__(link, memoryMap)
         self.mdm_idr = 0
+        self.mdm_ap = None
         self.do_auto_unlock = True
 
     def setAutoUnlock(self, doAutoUnlock):
@@ -57,7 +58,7 @@ class Kinetis(CoreSightTarget):
         super(Kinetis, self).init(initial_setup=True, bus_accessible=False)
 
         self.mdm_ap = ap.AccessPort(self.dp, 1)
-        self.aps.append(self.mdm_ap)
+        self.aps[1] = self.mdm_ap
         self.mdm_ap.init(False)
 
         # check MDM-AP ID

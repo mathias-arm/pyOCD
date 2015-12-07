@@ -55,7 +55,7 @@ class BreakpointProvider(object):
     def remove_breakpoint(self, bp):
         raise NotImplementedError()
 
-class SoftwareBreakpointsProvider(BreakpointProvider):
+class SoftwareBreakpointProvider(BreakpointProvider):
     ## BKPT #0 instruction.
     BKPT_INSTR = 0xbe00
 

@@ -483,7 +483,8 @@ class PyOCDTool(object):
         print "DAP IDCODE:   0x%08x" % self.target.readIDCode()
         print "Cores:        %d" % len(self.target.cores)
         for i, c in enumerate(self.target.cores):
-            print "Core %d type:  %s" % (i, pyOCD.target.cortex_m.CORE_TYPE_NAME[c.core_type])
+            core = self.target.cores[c]
+            print "Core %d type:  %s" % (i, pyOCD.target.cortex_m.CORE_TYPE_NAME[core.core_type])
 
     def handle_status(self, args):
         if self.target.isLocked():
@@ -494,7 +495,8 @@ class PyOCDTool(object):
             print "MDM-AP Control: 0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_CTRL)
             print "MDM-AP Status:  0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_STATUS)
         for i, c in enumerate(self.target.cores):
-            print "Core %d status:  %s" % (i, CORE_STATUS_DESC[c.getState()])
+            core = self.target.cores[c]
+            print "Core %d status:  %s" % (i, CORE_STATUS_DESC[core.getState()])
 
     def handle_reg(self, args):
         # If there are no args, print all register values.

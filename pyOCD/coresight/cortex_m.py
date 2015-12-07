@@ -22,7 +22,7 @@ from ..gdbserver import signals
 from ..utility import conversion
 from .fpb import FPB
 from .dwt import DWT
-from .breakpoints import (Breakpoint, Watchpoint, SoftwareBreakpointsProvider, BreakpointManager)
+from .breakpoints import (Breakpoint, Watchpoint, SoftwareBreakpointProvider, BreakpointManager)
 from . import (dap, ap)
 import logging
 import struct
@@ -43,16 +43,6 @@ CORE_TYPE_NAME = {
                  ARM_CortexM4 : "Cortex-M4",
                  ARM_CortexM0p : "Cortex-M0+"
                }
-
-WATCH_TYPE_TO_FUNCT = {
-                        Target.WATCHPOINT_READ: 5,
-                        Target.WATCHPOINT_WRITE: 6,
-                        Target.WATCHPOINT_READ_WRITE: 7
-                        }
-# Only sizes that are powers of 2 are supported
-# Breakpoint size = MASK**2
-WATCH_SIZE_TO_MASK = dict((2 ** i, i) for i in range(0, 32))
-
 
 # Maps the fault code found in the IPSR to a GDB signal value.
 FAULT = [
@@ -214,28 +204,7 @@ class CortexM(Target):
     NVIC_AIRCR_VECTRESET = (1 << 0)
     NVIC_AIRCR_SYSRESETREQ = (1 << 2)
 
-    CSYSPWRUPACK = 0x80000000
-    CDBGPWRUPACK = 0x20000000
-    CSYSPWRUPREQ = 0x40000000
-    CDBGPWRUPREQ = 0x10000000
-
-    TRNNORMAL = 0x00000000
-    MASKLANE = 0x00000f00
-
-
     DBGKEY = (0xA05F << 16)
-
-    # FPB (breakpoint)
-    FP_CTRL = (0xE0002000)
-    FP_CTRL_KEY = (1 << 1)
-    FP_COMP0 = (0xE0002008)
-
-    # DWT (data watchpoint & trace)
-    DWT_CTRL = 0xE0001000
-    DWT_COMP_BASE = 0xE0001020
-    DWT_MASK_OFFSET = 4
-    DWT_FUNCTION_OFFSET = 8
-    DWT_COMP_BLOCK_SIZE = 0x10
 
     class RegisterInfo(object):
         def __init__(self, name, bitsize, reg_type, reg_group):
@@ -328,7 +297,7 @@ class CortexM(Target):
         # Set up breakpoints manager.
         self.fpb = FPB(self.ap)
         self.dwt = DWT(self.ap)
-        self.sw_bp = SoftwareBreakpointsProvider(self)
+        self.sw_bp = SoftwareBreakpointProvider(self)
         self.bp_manager = BreakpointManager(self)
         self.bp_manager.add_provider(self.fpb, Target.BREAKPOINT_HW)
         self.bp_manager.add_provider(self.sw_bp, Target.BREAKPOINT_SW)

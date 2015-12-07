@@ -110,7 +110,7 @@ class DebugPort(object):
     def init(self):
         # Connect to the target.
         self.link.connect()
-        self.readIDCode()
+        self.read_id_code()
         self.clear_sticky_err()
 
     @property
@@ -121,9 +121,9 @@ class DebugPort(object):
     def fault_recovery_handler(self, handler):
         self._fault_recovery_handler = handler
 
-    def readIDCode(self):
+    def read_id_code(self):
         # Read ID register and get DP version
-        self.dpidr = self.readReg(DP_REG['IDCODE'])
+        self.dpidr = self.read_reg(DP_REG['IDCODE'])
         self.dp_version = (self.dpidr & DPIDR_VERSION_MASK) >> DPIDR_VERSION_SHIFT
         self.is_mindp = (self.dpidr & DPIDR_MIN_MASK) != 0
         return self.dpidr
@@ -135,24 +135,29 @@ class DebugPort(object):
             self._csw = {}
             self._dp_select = -1
 
-    def readReg(self, addr, now=True):
+    def read_reg(self, addr, now=True):
         return self.readDP(addr, now)
 
-    def writeReg(self, addr, data):
+    def write_reg(self, addr, data):
         self.writeDP(addr, data)
 
-    def powerUpDebug(self):
+    def power_up_debug(self):
         # select bank 0 (to access DRW and TAR)
-        self.writeReg(DP_REG['SELECT'], 0)
-        self.writeReg(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ)
+        self.write_reg(DP_REG['SELECT'], 0)
+        self.write_reg(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ)
 
         while True:
-            r = self.readReg(DP_REG['CTRL_STAT'])
+            r = self.read_reg(DP_REG['CTRL_STAT'])
             if (r & (CDBGPWRUPACK | CSYSPWRUPACK)) == (CDBGPWRUPACK | CSYSPWRUPACK):
                 break
 
-        self.writeReg(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ | TRNNORMAL | MASKLANE)
-        self.writeReg(DP_REG['SELECT'], 0)
+        self.write_reg(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ | TRNNORMAL | MASKLANE)
+        self.write_reg(DP_REG['SELECT'], 0)
+
+    def power_down_debug(self):
+        # select bank 0 (to access DRW and TAR)
+        self.write_reg(DP_REG['SELECT'], 0)
+        self.write_reg(DP_REG['CTRL_STAT'], 0)
 
     def reset(self):
         try:

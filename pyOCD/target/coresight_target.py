@@ -73,7 +73,7 @@ class CoreSightTarget(Target):
 
         # Create the DP and turn on debug.
         self.dp.init()
-        self.dp.powerUpDebug()
+        self.dp.power_up_debug()
 
         # Create an AHB-AP for the CPU.
         self.aps[0] = ap.AHB_AP(self.dp, 0)
@@ -82,6 +82,11 @@ class CoreSightTarget(Target):
         # Create CortexM core.
         self.cores[0] = cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map)
         self.cores[0].init(initial_setup=initial_setup, bus_accessible=bus_accessible)
+
+    def disconnect(self):
+        for core in self.cores.values():
+            core.disconnect()
+        self.dp.power_down_debug()
 
     def readIDCode(self):
         return self.dp.dpidr

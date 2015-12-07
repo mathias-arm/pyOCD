@@ -316,6 +316,16 @@ class CortexM(Target):
             self.dwt.init()
             self.sw_bp.init()
 
+    def disconnect(self):
+        # Remove breakpoints.
+        self.bp_manager.remove_all_breakpoints()
+
+        # Disable core debug.
+        self.write32(CortexM.DHCSR, CortexM.DBGKEY | 0x0000)
+
+        # Disable other debug blocks.
+        self.write32(CortexM.DEMCR, 0)
+
     def buildTargetXML(self):
         # Build register_list and targetXML
         self.register_list = []
@@ -375,7 +385,7 @@ class CortexM(Target):
         """
         return the IDCODE of the core
         """
-        return self.dp.readIDCode()
+        return self.dp.read_id_code()
 
     def writeMemory(self, addr, value, transfer_size=32):
         """
@@ -389,14 +399,24 @@ class CortexM(Target):
         read a memory location. By default, a word will
         be read
         """
-        return self.ap.readMemory(addr, transfer_size, now)
+        result = self.ap.readMemory(addr, transfer_size, now)
+
+        # Read callback returned for async reads.
+        def readMemoryCb():
+            return self.bp_manager.filter_memory(addr, transfer_size, result())
+
+        if now:
+            return self.bp_manager.filter_memory(addr, transfer_size, result)
+        else:
+            return readMemoryCb
 
     def readBlockMemoryUnaligned8(self, addr, size):
         """
         read a block of unaligned bytes in memory. Returns
         an array of byte values
         """
-        return self.ap.readBlockMemoryUnaligned8(addr, size)
+        data = self.ap.readBlockMemoryUnaligned8(addr, size)
+        return self.bp_manager.filter_memory_unaligned_8(addr, size, data)
 
     def writeBlockMemoryUnaligned8(self, addr, data):
         """
@@ -415,7 +435,8 @@ class CortexM(Target):
         read a block of aligned words in memory. Returns
         an array of word values
         """
-        return self.ap.readBlockMemoryAligned32(addr, size)
+        data = self.ap.readBlockMemoryAligned32(addr, size)
+        return self.bp_manager.filter_memory_aligned_32(addr, size, data)
 
     def halt(self):
         """

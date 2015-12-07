@@ -50,6 +50,9 @@ class FPB(BreakpointProvider):
         for bp in self.hw_breakpoints:
             self.ap.writeMemory(bp.comp_register_addr, 0)
 
+    def bp_type(self):
+        return Target.BREAKPOINT_HW
+
     def enable(self):
         self.ap.writeMemory(FPB.FP_CTRL, FPB.FP_CTRL_KEY | 1)
         self.enabled = True

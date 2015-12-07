@@ -66,6 +66,9 @@ class SoftwareBreakpointProvider(BreakpointProvider):
     def init(self):
         pass
 
+    def bp_type(self):
+        return Target.BREAKPOINT_SW
+
     def available_breakpoints(self):
         return -1
 
@@ -90,6 +93,7 @@ class SoftwareBreakpointProvider(BreakpointProvider):
             bp.addr = addr
             bp.original_instr = instr
 
+            # Save this breakpoint.
             self._breakpoints[addr] = bp
             return bp
         except DAPAccess.TransferError:
@@ -101,9 +105,30 @@ class SoftwareBreakpointProvider(BreakpointProvider):
 
         try:
             # Restore original instruction.
-            self.write16(bp.addr, bp.original_instr)
+            self._core.write16(bp.addr, bp.original_instr)
+
+            # Remove from our list.
+            del self._breakpoints[bp.addr]
         except DAPAccess.TransferError:
             logging.debug("Failed to set sw bp at 0x%x" % bp.addr)
+
+    def filter_memory(self, addr, size, data):
+        for bp in self._breakpoints.values():
+            if size == 8:
+                if bp.addr == addr:
+                    data = bp.original_instr & 0xff
+                elif bp.addr + 1 == addr:
+                    data = bp.original_instr >> 8
+            elif size == 16:
+                if bp.addr == addr:
+                    data = bp.original_instr
+            elif size == 32:
+                if bp.addr == addr:
+                    data = (data & 0xffff0000) | bp.original_instr
+                elif bp.addr + 2 == addr:
+                    data = (data & 0xffff) | (bp.original_instr << 16)
+
+        return data
 
 class BreakpointManager(object):
     def __init__(self, core):
@@ -197,4 +222,27 @@ class BreakpointManager(object):
         bp = self.find_breakpoint(addr)
         return bp.type if (bp is not None) else None
 
+    def filter_memory(self, addr, size, data):
+        if Target.BREAKPOINT_SW in self._providers:
+            self._providers[Target.BREAKPOINT_SW].filter_memory(addr, size, data)
+        return data
+
+    def filter_memory_unaligned_8(self, addr, size, data):
+        if Target.BREAKPOINT_SW in self._providers:
+            sw_bp = self._providers[Target.BREAKPOINT_SW]
+            for i, d in enumerate(data):
+                data[i] = sw_bp.filter_memory(addr + i, 8, d)
+        return data
+
+    def filter_memory_aligned_32(self, addr, size, data):
+        if Target.BREAKPOINT_SW in self._providers:
+            sw_bp = self._providers[Target.BREAKPOINT_SW]
+            for i, d in enumerate(data):
+                data[i] = sw_bp.filter_memory(addr + i, 32, d)
+        return data
+
+    def remove_all_breakpoints(self):
+        for bp in self._breakpoints.values():
+            bp.provider.remove_breakpoint(bp)
+        self._breakpoints = {}
 

@@ -72,23 +72,23 @@ class AccessPort(object):
             self.logger = self.dp.logger.getChild('ap%d' % ap_num)
 
     def init(self, bus_accessible=True):
-        self.idr = self.readReg(AP_REG['IDR'])
+        self.idr = self.read_reg(AP_REG['IDR'])
 
         # Init ROM table
-        self.rom_addr = self.readReg(AP_ROM_TABLE_ADDR_REG)
+        self.rom_addr = self.read_reg(AP_ROM_TABLE_ADDR_REG)
         self.has_rom_table = (self.rom_addr != 0xffffffff) and ((self.rom_addr & AP_ROM_TABLE_ENTRY_PRESENT_MASK) != 0)
         self.rom_addr &= 0xfffffffc # clear format and present bits
         if self.has_rom_table and bus_accessible:
-            self.initROMTable()
+            self.init_rom_table()
 
-    def initROMTable(self):
+    def init_rom_table(self):
         self.rom_table = ROMTable(self)
         self.rom_table.init()
 
-    def readReg(self, addr, now=True):
+    def read_reg(self, addr, now=True):
         return self.dp.readAP((self.ap_num << APSEL_SHIFT) | addr, now)
 
-    def writeReg(self, addr, data):
+    def write_reg(self, addr, data):
         self.dp.writeAP((self.ap_num << APSEL_SHIFT) | addr, data)
 
 class MEM_AP(AccessPort):
@@ -103,15 +103,15 @@ class MEM_AP(AccessPort):
         num = self.dp.next_access_number
         if LOG_DAP:
             self.logger.info("writeMem:%06d (addr=0x%08x, size=%d) = 0x%08x {", num, addr, transfer_size, data)
-        self.writeReg(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
+        self.write_reg(AP_REG['CSW'], CSW_VALUE | TRANSFER_SIZE[transfer_size])
         if transfer_size == 8:
             data = data << ((addr & 0x03) << 3)
         elif transfer_size == 16:
             data = data << ((addr & 0x02) << 3)
 
         try:
-            self.writeReg(AP_REG['TAR'], addr)
-            self.writeReg(AP_REG['DRW'], data)
+            self.write_reg(AP_REG['TAR'], addr)
+            self.write_reg(AP_REG['DRW'], data)
         except DAPAccess.Error as error:
             self._handle_error(error, num)
             raise
@@ -127,10 +127,10 @@ class MEM_AP(AccessPort):
             self.logger.info("readMem:%06d (addr=0x%08x, size=%d) {", num, addr, transfer_size)
         res = None
         try:
-            self.writeReg(AP_REG['CSW'], CSW_VALUE |
+            self.write_reg(AP_REG['CSW'], CSW_VALUE |
                          TRANSFER_SIZE[transfer_size])
-            self.writeReg(AP_REG['TAR'], addr)
-            result_cb = self.readReg(AP_REG['DRW'], now=False)
+            self.write_reg(AP_REG['TAR'], addr)
+            result_cb = self.read_reg(AP_REG['DRW'], now=False)
         except DAPAccess.Error as error:
             self._handle_error(error, num)
             raise
@@ -161,10 +161,10 @@ class MEM_AP(AccessPort):
         if LOG_DAP:
             self.logger.info("writeBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, len(data))
         # put address in TAR
-        self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
-        self.writeReg(AP_REG['TAR'], addr)
+        self.write_reg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.write_reg(AP_REG['TAR'], addr)
         try:
-            reg = _ap_addr_to_reg(WRITE | AP_ACC | AP_REG['DRW'])
+            reg = _ap_addr_to_reg((self.ap_num << APSEL_SHIFT) | WRITE | AP_ACC | AP_REG['DRW'])
             self.link.reg_write_repeat(len(data), reg, data)
         except DAPAccess.Error as error:
             self._handle_error(error, num)
@@ -178,10 +178,10 @@ class MEM_AP(AccessPort):
         if LOG_DAP:
             self.logger.info("readBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, size)
         # put address in TAR
-        self.writeReg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
-        self.writeReg(AP_REG['TAR'], addr)
+        self.write_reg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
+        self.write_reg(AP_REG['TAR'], addr)
         try:
-            reg = _ap_addr_to_reg(READ | AP_ACC | AP_REG['DRW'])
+            reg = _ap_addr_to_reg((self.ap_num << APSEL_SHIFT) | READ | AP_ACC | AP_REG['DRW'])
             resp = self.link.reg_read_repeat(size, reg)
         except DAPAccess.Error as error:
             self._handle_error(error, num)

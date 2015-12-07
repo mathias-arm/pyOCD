@@ -64,6 +64,9 @@ class Target(object):
     def init(self):
         raise NotImplementedError()
 
+    def disconnect(self):
+        pass
+
     def info(self, request):
         return self.link.info(request)
 

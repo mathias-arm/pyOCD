@@ -77,16 +77,16 @@ class Kinetis(CoreSightTarget):
                     logging.error("%s: mass erase failed", self.part_number)
                     raise Exception("unable to unlock device")
                 # Use the MDM to keep the target halted after reset has been released
-                self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST)
+                self.mdm_ap.write_reg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST)
                 # Enable debug
                 self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN)
                 self.dp.assert_reset(False)
-                while self.mdm_ap.readReg(MDM_STATUS) & MDM_STATUS_CORE_HALTED != MDM_STATUS_CORE_HALTED:
+                while self.mdm_ap.read_reg(MDM_STATUS) & MDM_STATUS_CORE_HALTED != MDM_STATUS_CORE_HALTED:
                     logging.debug("Waiting for mdm halt (erase)")
                     sleep(0.01)
 
                 # release MDM halt once it has taken effect in the DHCSR
-                self.mdm_ap.writeReg(MDM_CTRL, 0)
+                self.mdm_ap.write_reg(MDM_CTRL, 0)
 
                 isLocked = False
             else:
@@ -100,31 +100,31 @@ class Kinetis(CoreSightTarget):
 
         if self.halt_on_connect:
             # Prevent the target from resetting if it has invalid code
-            self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET)
-            while self.mdm_ap.readReg(MDM_CTRL) & (MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET) != (MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET):
-                self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET)
+            self.mdm_ap.write_reg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET)
+            while self.mdm_ap.read_reg(MDM_CTRL) & (MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET) != (MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET):
+                self.mdm_ap.write_reg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST | MDM_CTRL_CORE_HOLD_RESET)
             # Enable debug
             self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN)
             # Disable holding the core in reset, leave MDM halt on
-            self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST)
+            self.mdm_ap.write_reg(MDM_CTRL, MDM_CTRL_DEBUG_REQUEST)
 
             # Wait until the target is halted
-            while self.mdm_ap.readReg(MDM_STATUS) & MDM_STATUS_CORE_HALTED != MDM_STATUS_CORE_HALTED:
+            while self.mdm_ap.read_reg(MDM_STATUS) & MDM_STATUS_CORE_HALTED != MDM_STATUS_CORE_HALTED:
                 logging.debug("Waiting for mdm halt")
                 sleep(0.01)
 
             # release MDM halt once it has taken effect in the DHCSR
-            self.mdm_ap.writeReg(MDM_CTRL, 0)
+            self.mdm_ap.write_reg(MDM_CTRL, 0)
 
             # sanity check that the target is still halted
             if self.getState() == Target.TARGET_RUNNING:
                 raise Exception("Target failed to stay halted during init sequence")
 
-        self.aps[0].initROMTable()
+        self.aps[0].init_rom_table()
         self.cores[0].init(initial_setup=False, bus_accessible=True)
 
     def isLocked(self):
-        val = self.mdm_ap.readReg(MDM_STATUS)
+        val = self.mdm_ap.read_reg(MDM_STATUS)
         if val & MDM_STATUS_SYSTEM_SECURITY:
             return True
         else:
@@ -135,36 +135,36 @@ class Kinetis(CoreSightTarget):
     def massErase(self):
         # Wait until flash is inited.
         while True:
-            status = self.mdm_ap.readReg(MDM_STATUS)
+            status = self.mdm_ap.read_reg(MDM_STATUS)
             if status & MDM_STATUS_FLASH_READY:
                 break
             sleep(0.01)
 
         # Check if mass erase is enabled.
-        status = self.mdm_ap.readReg(MDM_STATUS)
+        status = self.mdm_ap.read_reg(MDM_STATUS)
         if not (status & MDM_STATUS_MASS_ERASE_ENABLE):
             logging.error("Mass erase disabled. MDM status: 0x%x", status)
             return False
 
         # Set Flash Mass Erase in Progress bit to start erase.
-        self.mdm_ap.writeReg(MDM_CTRL, MDM_CTRL_FLASH_MASS_ERASE_IN_PROGRESS)
+        self.mdm_ap.write_reg(MDM_CTRL, MDM_CTRL_FLASH_MASS_ERASE_IN_PROGRESS)
 
         # Wait for Flash Mass Erase Acknowledge to be set.
         while True:
-            val = self.mdm_ap.readReg(MDM_STATUS)
+            val = self.mdm_ap.read_reg(MDM_STATUS)
             if val & MDM_STATUS_FLASH_MASS_ERASE_ACKNOWLEDGE:
                 break
             sleep(0.01)
 
         # Wait for Flash Mass Erase in Progress bit to clear when erase is completed.
         while True:
-            val = self.mdm_ap.readReg(MDM_CTRL)
+            val = self.mdm_ap.read_reg(MDM_CTRL)
             if (val == 0):
                 break
             sleep(0.01)
 
         # Confirm the part was unlocked
-        val = self.mdm_ap.readReg(MDM_STATUS)
+        val = self.mdm_ap.read_reg(MDM_STATUS)
         if (val & MDM_STATUS_SYSTEM_SECURITY) == 0:
             logging.warning("%s secure state: unlocked successfully", self.part_number)
             return True

@@ -42,7 +42,7 @@ class SpeedTest(Test):
     def print_perf_info(self, result_list):
         result_list = filter(lambda x : isinstance(x, SpeedTestResult), result_list)
         print("\r\n\r\n------ Speed Test Performance ------")
-        print("{:<10}{:<16}{:<16}".format("Target", "Write Speed", "Read Speed"))
+        print("{:<10}{:<16}{:<16}".format("Target", "Read Speed", "Write Speed"))
         print("")
         for result in result_list:
             if result.passed:

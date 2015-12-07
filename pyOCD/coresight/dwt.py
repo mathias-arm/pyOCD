@@ -15,10 +15,9 @@
  limitations under the License.
 """
 
-import logging
-from .rom_table import CoreSightComponent
 from .breakpoints import Watchpoint
 from ..target.target import Target
+import logging
 
 # Need a local copy to prevent circular import.
 # Debug Exception and Monitor Control Register
@@ -29,7 +28,7 @@ DEMCR_VC_HARDERR = (1 << 10)
 DEMCR_VC_BUSERR = (1 << 8)
 DEMCR_VC_CORERESET = (1 << 0)
 
-class DWT(CoreSightComponent):
+class DWT(object):
     # DWT (data watchpoint & trace)
     DWT_CTRL = 0xE0001000
     DWT_COMP_BASE = 0xE0001020
@@ -47,43 +46,41 @@ class DWT(CoreSightComponent):
     # Breakpoint size = MASK**2
     WATCH_SIZE_TO_MASK = dict((2**i, i) for i in range(0,32))
 
-    def __init__(self, ap, top_addr):
-        super(DWT, self).__init__(ap, top_addr)
+    def __init__(self, ap):
+        super(DWT, self).__init__()
+        self.ap = ap
         self.watchpoints = []
         self.watchpoint_used = 0
         self.dwt_configured = False
 
+    ## @brief Inits the DWT.
+    #
+    # Reads the number of hardware watchpoints available on the core  and makes sure that they
+    # are all disabled and ready for future use.
     def init(self):
-        """
-        Reads the number of hardware watchpoints available on the core
-        and makes sure that they are all disabled and ready for future
-        use
-        """
-        demcr = self.ap.readMemory(CortexM.DEMCR)
-        demcr = demcr | CortexM.DEMCR_TRCENA
-        self.ap.writeMemory(CortexM.DEMCR, demcr)
+        demcr = self.ap.readMemory(DEMCR)
+        demcr = demcr | DEMCR_TRCENA
+        self.ap.writeMemory(DEMCR, demcr)
         dwt_ctrl = self.ap.readMemory(DWT.DWT_CTRL)
         watchpoint_count = (dwt_ctrl >> 28) & 0xF
         logging.info("%d hardware watchpoints", watchpoint_count)
         for i in range(watchpoint_count):
-            self.watchpoints.append(Watchpoint(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i))
-            self.writeMemory(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i + DWT.DWT_FUNCTION_OFFSET, 0)
+            self.watchpoints.append(Watchpoint(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i, self))
+            self.ap.writeMemory(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i + DWT.DWT_FUNCTION_OFFSET, 0)
         self.dwt_configured = True
 
-    def findWatchpoint(self, addr, size, type):
+    def find_watchpoint(self, addr, size, type):
         for watch in self.watchpoints:
             if watch.addr == addr and watch.size == size and watch.func == DWT.WATCH_TYPE_TO_FUNCT[type]:
                 return watch
         return None
 
-    def setWatchpoint(self, addr, size, type):
-        """
-        set a hardware watchpoint
-        """
+    ## @brief Set a hardware watchpoint.
+    def set_watchpoint(self, addr, size, type):
         if self.dwt_configured is False:
-            self.setupDWT()
+            self.init()
 
-        watch = self.findWatchpoint(addr, size, type)
+        watch = self.find_watchpoint(addr, size, type)
         if watch != None:
             return True
 
@@ -102,29 +99,26 @@ class DWT(CoreSightComponent):
                     return False
 
                 mask = DWT.WATCH_SIZE_TO_MASK[size]
-                self.writeMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET, mask)
-                if self.readMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET) != mask:
+                self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET, mask)
+                if self.ap.readMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET) != mask:
                     logging.error('Watchpoint of size %d not supported by device', size)
                     return False
 
-                self.writeMemory(watch.comp_register_addr, addr)
-                self.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, watch.func)
+                self.ap.writeMemory(watch.comp_register_addr, addr)
+                self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, watch.func)
                 self.watchpoint_used += 1
                 return True
 
         logging.error('No more available watchpoint!!, dropped watch at 0x%X', addr)
         return False
 
-    def removeWatchpoint(self, addr, size, type):
-        """
-        remove a hardware watchpoint
-        """
-        watch = self.findWatchpoint(addr, size, type)
+    ## @brief Remove a hardware watchpoint.
+    def remove_watchpoint(self, addr, size, type):
+        watch = self.find_watchpoint(addr, size, type)
         if watch is None:
             return
 
         watch.func = 0
-        self.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, 0)
+        self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, 0)
         self.watchpoint_used -= 1
-        return
 

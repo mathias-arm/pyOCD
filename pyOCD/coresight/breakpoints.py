@@ -15,36 +15,186 @@
  limitations under the License.
 """
 
-import logging
-from .rom_table import CoreSightComponent
 from ..target.target import Target
+from ..pyDAPAccess import DAPAccess
+import logging
 
 class Breakpoint(object):
-    def __init__(self, comp_register_addr):
+    def __init__(self, comp_register_addr, provider):
         self.type = Target.BREAKPOINT_HW
         self.comp_register_addr = comp_register_addr
         self.enabled = False
         self.addr = 0
         self.original_instr = 0
+        self.provider = provider
 
 class Watchpoint(Breakpoint):
-    def __init__(self, comp_register_addr):
-        super(Watchpoint, self).__init__(comp_register_addr)
+    def __init__(self, comp_register_addr, provider):
+        super(Watchpoint, self).__init__(comp_register_addr, provider)
         self.addr = 0
         self.size = 0
         self.func = 0
 
+## @brief Abstract base class for breakpoint providers.
 class BreakpointProvider(object):
+    def init(self):
+        raise NotImplementedError()
+
     def bp_type(self):
         return 0
+
+    def available_breakpoints(self):
+        raise NotImplementedError()
+
+    def find_breakpoint(self, addr):
+        raise NotImplementedError()
 
     def set_breakpoint(self, addr):
         raise NotImplementedError()
 
-    def remove_breakpoint(self, addr):
+    def remove_breakpoint(self, bp):
         raise NotImplementedError()
 
+class SoftwareBreakpointsProvider(BreakpointProvider):
+    ## BKPT #0 instruction.
+    BKPT_INSTR = 0xbe00
+
+    def __init__(self, core):
+        self._core = core
+        self._breakpoints = {}
+
+    def init(self):
+        pass
+
+    def available_breakpoints(self):
+        return -1
+
+    def find_breakpoint(self, addr):
+        return self._breakpoints.get(addr, None)
+
+    def set_breakpoint(self, addr):
+        assert self._core.memory_map.getRegionForAddress(addr).isRam
+        assert (addr & 1) == 0
+
+        try:
+            # Read original instruction.
+            instr = self._core.read16(addr)
+
+            # Insert BKPT #0 instruction.
+            self._core.write16(addr, self.BKPT_INSTR)
+
+            # Create bp object.
+            bp = Breakpoint(0, self)
+            bp.type = Target.BREAKPOINT_SW
+            bp.enabled = True
+            bp.addr = addr
+            bp.original_instr = instr
+
+            self._breakpoints[addr] = bp
+            return bp
+        except DAPAccess.TransferError:
+            logging.debug("Failed to set sw bp at 0x%x" % addr)
+            return None
+
+    def remove_breakpoint(self, bp):
+        assert bp is not None and isinstance(bp, Breakpoint)
+
+        try:
+            # Restore original instruction.
+            self.write16(bp.addr, bp.original_instr)
+        except DAPAccess.TransferError:
+            logging.debug("Failed to set sw bp at 0x%x" % bp.addr)
 
 class BreakpointManager(object):
-    def __init__(self, ap):
-        self.ap = ap
+    def __init__(self, core):
+        self._breakpoints = {}
+        self._core = core
+        self._fpb = None
+        self._providers = {}
+
+    def add_provider(self, provider, type):
+        self._providers[type] = provider
+        if type == Target.BREAKPOINT_HW:
+            self._fpb = provider
+
+    def find_breakpoint(self, addr):
+        return self._breakpoints.get(addr, None)
+
+    ## @brief Set a hardware or software breakpoint at a specific location in memory.
+    #
+    # @retval True Breakpoint was set.
+    # @retval False Breakpoint could not be set.
+    def set_breakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
+        logging.debug("set bkpt type %d at 0x%x", type, addr)
+
+        # Clear Thumb bit in case it is set.
+        addr = addr & ~1
+
+        # Check for an existing breakpoint at this address.
+        bp = self.find_breakpoint(addr)
+        if bp is not None:
+            return True
+
+        # Look up the memory region for the requested address. If there is no region,
+        # then we can't set a breakpoint.
+        region = self._core.memory_map.getRegionForAddress(addr)
+        if region is None:
+            return False
+
+        # Determine best type to use if auto.
+        if type == Target.BREAKPOINT_AUTO:
+            # Use sw breaks for:
+            #  1. Addresses outside the supported FPBv1 range of 0-0x1fffffff
+            #  2. RAM regions by default.
+            #  3. No hw breaks are left.
+            #
+            # Otherwise use hw.
+            if (addr >= 0x20000000) or (region.isRam) or (self._fpb and self._fpb.available_breakpoints() == 0):
+                type = Target.BREAKPOINT_SW
+            else:
+                type = Target.BREAKPOINT_HW
+
+            logging.debug("using type %d for auto bp", type)
+
+        # Revert to sw bp above 0x2000_0000.
+        if (type == Target.BREAKPOINT_HW) and (addr >= 0x20000000):
+            logging.debug("using sw bp instead because of unsupported addr")
+            type = Target.BREAKPOINT_SW
+
+        # Revert to hw bp if region is flash.
+        if region.isFlash:
+            logging.debug("using hw bp instead because addr is flash")
+            type = Target.BREAKPOINT_HW
+
+        # Set the bp.
+        try:
+            provider = self._providers[type]
+            bp = provider.set_breakpoint(addr)
+        except KeyError:
+            raise RuntimeError("Unknown breakpoint type %d" % type)
+
+        # Save the bp.
+        if bp is not None:
+            self._breakpoints[addr] = bp
+
+    ## @brief Remove a breakpoint at a specific location.
+    def remove_breakpoint(self, addr):
+        try:
+            logging.debug("remove bkpt at 0x%x", addr)
+
+            # Clear Thumb bit in case it is set.
+            addr = addr & ~1
+
+            # Get bp and remove from dict.
+            bp = self._breakpoints.pop(addr)
+
+            assert bp.provider is not None
+            bp.provider.remove_breakpoint(bp)
+        except KeyError:
+            logging.debug("Tried to remove breakpoint 0x%08x that wasn't set" % addr)
+
+    def get_breakpoint_type(self, addr):
+        bp = self.find_breakpoint(addr)
+        return bp.type if (bp is not None) else None
+
+

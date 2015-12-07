@@ -20,9 +20,9 @@ from ..target.target import Target
 from pyOCD.pyDAPAccess import DAPAccess
 from ..gdbserver import signals
 from ..utility import conversion
-from .fpb import *
-from .dwt import *
-from .breakpoints import (Breakpoint, Watchpoint)
+from .fpb import FPB
+from .dwt import DWT
+from .breakpoints import (Breakpoint, Watchpoint, SoftwareBreakpointsProvider, BreakpointManager)
 from . import (dap, ap)
 import logging
 import struct
@@ -318,22 +318,20 @@ class CortexM(Target):
     def __init__(self, link, dp, ap, memoryMap=None, core_num=0):
         super(CortexM, self).__init__(link, memoryMap)
 
-        self.hw_breakpoints = []
-        self.breakpoints = {}
-        self.nb_code = 0
-        self.nb_lit = 0
-        self.num_hw_breakpoint_used = 0
-        self.nb_lit = 0
-        self.fpb_enabled = False
-        self.watchpoints = []
-        self.watchpoint_used = 0
-        self.dwt_configured = False
         self.arch = 0
         self.core_type = 0
         self.has_fpu = False
         self.dp = dp
         self.ap = ap
         self.core_number = core_num
+
+        # Set up breakpoints manager.
+        self.fpb = FPB(self.ap)
+        self.dwt = DWT(self.ap)
+        self.sw_bp = SoftwareBreakpointsProvider(self)
+        self.bp_manager = BreakpointManager(self)
+        self.bp_manager.add_provider(self.fpb, Target.BREAKPOINT_HW)
+        self.bp_manager.add_provider(self.sw_bp, Target.BREAKPOINT_SW)
 
     def init(self, initial_setup=True, bus_accessible=True):
         """
@@ -342,11 +340,12 @@ class CortexM(Target):
         if bus_accessible:
             if self.halt_on_connect:
                 self.halt()
-            self.setupFPB()
             self.readCoreType()
             self.checkForFPU()
-            self.setupDWT()
             self.buildTargetXML()
+            self.fpb.init()
+            self.dwt.init()
+            self.sw_bp.init()
 
     def buildTargetXML(self):
         # Build register_list and targetXML
@@ -402,43 +401,6 @@ class CortexM(Target):
 
         if self.has_fpu:
             logging.info("FPU present")
-
-
-    def setupFPB(self):
-        """
-        Reads the number of hardware breakpoints available on the core
-        and disable the FPB (Flash Patch and Breakpoint Unit)
-        which will be enabled when a first breakpoint will be set
-        """
-        # setup FPB (breakpoint)
-        fpcr = self.readMemory(CortexM.FP_CTRL)
-        self.nb_code = ((fpcr >> 8) & 0x70) | ((fpcr >> 4) & 0xF)
-        self.nb_lit = (fpcr >> 7) & 0xf
-        logging.info("%d hardware breakpoints, %d literal comparators", self.nb_code, self.nb_lit)
-        for i in range(self.nb_code):
-            self.hw_breakpoints.append(Breakpoint(CortexM.FP_COMP0 + 4 * i))
-
-        # disable FPB (will be enabled on first bp set)
-        self.disableFPB()
-        for bp in self.hw_breakpoints:
-            self.writeMemory(bp.comp_register_addr, 0)
-
-    def setupDWT(self):
-        """
-        Reads the number of hardware watchpoints available on the core
-        and makes sure that they are all disabled and ready for future
-        use
-        """
-        demcr = self.readMemory(CortexM.DEMCR)
-        demcr = demcr | CortexM.DEMCR_TRCENA
-        self.writeMemory(CortexM.DEMCR, demcr)
-        dwt_ctrl = self.readMemory(CortexM.DWT_CTRL)
-        watchpoint_count = (dwt_ctrl >> 28) & 0xF
-        logging.info("%d hardware watchpoints", watchpoint_count)
-        for i in range(watchpoint_count):
-            self.watchpoints.append(Watchpoint(CortexM.DWT_COMP_BASE + CortexM.DWT_COMP_BLOCK_SIZE * i))
-            self.writeMemory(CortexM.DWT_COMP_BASE + CortexM.DWT_COMP_BLOCK_SIZE * i + CortexM.DWT_FUNCTION_OFFSET, 0)
-        self.dwt_configured = True
 
     def readIDCode(self):
         """
@@ -635,7 +597,7 @@ class CortexM(Target):
         self.dp.flush()
 
     def findBreakpoint(self, addr):
-        return self.breakpoints.get(addr, None)
+        return self.bp_manager.find_breakpoint(addr)
 
     def readCoreRegister(self, reg):
         """
@@ -808,229 +770,32 @@ class CortexM(Target):
     # @retval True Breakpoint was set.
     # @retval False Breakpoint could not be set.
     def setBreakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
-        logging.debug("set bkpt type %d at 0x%x", type, addr)
-
-        # Clear Thumb bit in case it is set.
-        addr = addr & ~1
-
-        # Check for an existing breakpoint at this address.
-        bp = self.findBreakpoint(addr)
-        if bp is not None:
-            return True
-
-        # Look up the memory region for the requested address. If there is no region,
-        # then we can't set a breakpoint.
-        region = self.memory_map.getRegionForAddress(addr)
-        if region is None:
-            return False
-
-        # Determine best type to use if auto.
-        if type == Target.BREAKPOINT_AUTO:
-            # Use sw breaks for:
-            #  1. Addresses outside the supported FPBv1 range of 0-0x1fffffff
-            #  2. RAM regions by default.
-            #  3. No hw breaks are left.
-            #
-            # Otherwise use hw.
-            if (addr >= 0x20000000) or (region.isRam) or (self.availableBreakpoint() == 0):
-                type = Target.BREAKPOINT_SW
-            else:
-                type = Target.BREAKPOINT_HW
-
-            logging.debug("using type %d for auto bp", type)
-
-        # Revert to sw bp above 0x2000_0000.
-        if (type == Target.BREAKPOINT_HW) and (addr >= 0x20000000):
-            logging.debug("using sw bp instead because of unsupported addr")
-            type = Target.BREAKPOINT_SW
-
-        # Revert to hw bp if region is flash.
-        if region.isFlash:
-            logging.debug("using hw bp instead because addr is flash")
-            type = Target.BREAKPOINT_HW
-
-        # Set the bp.
-        if type == Target.BREAKPOINT_HW:
-            return self.setHardwareBreakpoint(addr)
-        elif type == Target.BREAKPOINT_SW:
-            return self.setSoftwareBreakpoint(addr)
-        else:
-            raise RuntimeError("Unknown breakpoint type %d" % type)
+        return self.bp_manager.set_breakpoint(addr, type)
 
     ## @brief Remove a breakpoint at a specific location.
     def removeBreakpoint(self, addr):
-        try:
-            logging.debug("remove bkpt at 0x%x", addr)
-
-            # Clear Thumb bit in case it is set.
-            addr = addr & ~1
-
-            # Get bp and remove from dict.
-            bp = self.breakpoints.pop(addr)
-
-            # Remove bp by type.
-            if bp.type == Target.BREAKPOINT_SW:
-                self.removeSoftwareBreakpoint(bp)
-            elif bp.type == Target.BREAKPOINT_HW:
-                self.removeHardwareBreakpoint(bp.addr)
-            else:
-                raise RuntimeError("Unknown breakpoint type %d" % bp.type)
-
-        except KeyError:
-            logging.debug("Tried to remove breakpoint 0x%08x that wasn't set" % addr)
+        self.bp_manager.remove_breakpoint(addr)
 
     def getBreakpointType(self, addr):
-        bp = self.findBreakpoint(addr)
-        return bp.type if (bp is not None) else None
-
-    def setSoftwareBreakpoint(self, addr):
-        assert self.memory_map.getRegionForAddress(addr).isRam
-        assert (addr & 1) == 0
-
-        try:
-            # Read original instruction.
-            instr = self.read16(addr)
-
-            # Insert BKPT #0 instruction.
-            self.write16(addr, 0xbe00)
-
-            # Create bp object.
-            bp = Breakpoint(0)
-            bp.type = Target.BREAKPOINT_SW
-            bp.enabled = True
-            bp.addr = addr
-            bp.original_instr = instr
-
-            self.breakpoints[addr] = bp
-            return True
-        except DAPAccess.TransferError:
-            logging.debug("Failed to set sw bp at 0x%x" % addr)
-            return False
-
-    def removeSoftwareBreakpoint(self, bp):
-        assert bp is not None and isinstance(bp, Breakpoint)
-
-        try:
-            # Restore original instruction.
-            self.write16(bp.addr, bp.original_instr)
-        except DAPAccess.TransferError:
-            logging.debug("Failed to set sw bp at 0x%x" % bp.addr)
-
-    def setHardwareBreakpoint(self, addr):
-        """
-        set a hardware breakpoint at a specific location in flash
-        """
-        if self.fpb_enabled is False:
-            self.enableFPB()
-
-        if addr >= 0x20000000:
-            # Hardware breakpoints are only supported in the range
-            # 0x00000000 - 0x1fffffff on cortex-m devices
-            logging.error('Breakpoint out of range 0x%X', addr)
-            return False
-
-        if self.availableBreakpoint() == 0:
-            logging.error('No more available breakpoint!!, dropped bp at 0x%X', addr)
-            return False
-
-        for bp in self.hw_breakpoints:
-            if not bp.enabled:
-                bp.enabled = True
-                bp_match = (1 << 30)
-                if addr & 0x2:
-                    bp_match = (2 << 30)
-                self.writeMemory(bp.comp_register_addr, addr & 0x1ffffffc | bp_match | 1)
-                bp.addr = addr
-                self.num_hw_breakpoint_used += 1
-                self.breakpoints[addr] = bp
-                return True
-        return False
+        return self.bp_manager.get_breakpoint_type(addr)
 
     def availableBreakpoint(self):
-        return len(self.hw_breakpoints) - self.num_hw_breakpoint_used
-
-    def enableFPB(self):
-        self.writeMemory(CortexM.FP_CTRL, CortexM.FP_CTRL_KEY | 1)
-        self.fpb_enabled = True
-        logging.debug('fpb has been enabled')
-        return
-
-    def disableFPB(self):
-        self.writeMemory(CortexM.FP_CTRL, CortexM.FP_CTRL_KEY | 0)
-        self.fpb_enabled = False
-        logging.debug('fpb has been disabled')
-        return
-
-    def removeHardwareBreakpoint(self, addr):
-        """
-        remove a hardware breakpoint at a specific location in flash
-        """
-        for bp in self.hw_breakpoints:
-            if bp.enabled and bp.addr == addr:
-                bp.enabled = False
-                self.writeMemory(bp.comp_register_addr, 0)
-                bp.addr = addr
-                self.num_hw_breakpoint_used -= 1
-                return
-        return
+        return self.fpb.available_breakpoints()
 
     def findWatchpoint(self, addr, size, type):
-        for watch in self.watchpoints:
-            if watch.addr == addr and watch.size == size and watch.func == WATCH_TYPE_TO_FUNCT[type]:
-                return watch
-        return None
+        return self.dwt.find_watchpoint(addr, size, type)
 
     def setWatchpoint(self, addr, size, type):
         """
         set a hardware watchpoint
         """
-        if self.dwt_configured is False:
-            self.setupDWT()
-
-        watch = self.findWatchpoint(addr, size, type)
-        if watch != None:
-            return True
-
-        if type not in WATCH_TYPE_TO_FUNCT:
-            logging.error("Invalid watchpoint type %i", type)
-            return False
-
-        for watch in self.watchpoints:
-            if watch.func == 0:
-                watch.addr = addr
-                watch.func = WATCH_TYPE_TO_FUNCT[type]
-                watch.size = size
-
-                if size not in WATCH_SIZE_TO_MASK:
-                    logging.error('Watchpoint of size %d not supported by device', size)
-                    return False
-
-                mask = WATCH_SIZE_TO_MASK[size]
-                self.writeMemory(watch.comp_register_addr + CortexM.DWT_MASK_OFFSET, mask)
-                if self.readMemory(watch.comp_register_addr + CortexM.DWT_MASK_OFFSET) != mask:
-                    logging.error('Watchpoint of size %d not supported by device', size)
-                    return False
-
-                self.writeMemory(watch.comp_register_addr, addr)
-                self.writeMemory(watch.comp_register_addr + CortexM.DWT_FUNCTION_OFFSET, watch.func)
-                self.watchpoint_used += 1
-                return True
-
-        logging.error('No more available watchpoint!!, dropped watch at 0x%X', addr)
-        return False
+        return self.dwt.set_watchpoint(addr, size, type)
 
     def removeWatchpoint(self, addr, size, type):
         """
         remove a hardware watchpoint
         """
-        watch = self.findWatchpoint(addr, size, type)
-        if watch is None:
-            return
-
-        watch.func = 0
-        self.writeMemory(watch.comp_register_addr + CortexM.DWT_FUNCTION_OFFSET, 0)
-        self.watchpoint_used -= 1
-        return
+        return self.dwt.remove_watchpoint(addr, size, type)
 
     def setVectorCatchFault(self, enable):
         demcr = self.readMemory(CortexM.DEMCR)

@@ -125,7 +125,7 @@ class SoftwareBreakpointProvider(BreakpointProvider):
             elif size == 32:
                 if bp.addr == addr:
                     data = (data & 0xffff0000) | bp.original_instr
-                elif bp.addr + 2 == addr:
+                elif bp.addr == addr + 2:
                     data = (data & 0xffff) | (bp.original_instr << 16)
 
         return data
@@ -224,7 +224,7 @@ class BreakpointManager(object):
 
     def filter_memory(self, addr, size, data):
         if Target.BREAKPOINT_SW in self._providers:
-            self._providers[Target.BREAKPOINT_SW].filter_memory(addr, size, data)
+            data = self._providers[Target.BREAKPOINT_SW].filter_memory(addr, size, data)
         return data
 
     def filter_memory_unaligned_8(self, addr, size, data):

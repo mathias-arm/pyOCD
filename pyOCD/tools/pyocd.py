@@ -492,8 +492,8 @@ class PyOCDTool(object):
         else:
             print "Security:       Unlocked"
         if isinstance(self.target, pyOCD.target.target_kinetis.Kinetis):
-            print "MDM-AP Control: 0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_CTRL)
-            print "MDM-AP Status:  0x%08x" % self.target.mdm_ap.readReg(target_kinetis.MDM_STATUS)
+            print "MDM-AP Control: 0x%08x" % self.target.mdm_ap.read_reg(target_kinetis.MDM_CTRL)
+            print "MDM-AP Status:  0x%08x" % self.target.mdm_ap.read_reg(target_kinetis.MDM_STATUS)
         for i, c in enumerate(self.target.cores):
             core = self.target.cores[c]
             print "Core %d status:  %s" % (i, CORE_STATUS_DESC[core.getState()])

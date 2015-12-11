@@ -260,8 +260,10 @@ class GDBServer(threading.Thread):
         self.packet_io = None
         self.gdb_features = []
         self.non_stop = False
+        self.interrupt_flag = False
         self.multiprocess = False
         self.is_target_running = {}
+        self.visible_cores = {}
         self.flashBuilder = None
         self.lock = threading.Lock()
         self.shutdown_event = threading.Event()
@@ -280,8 +282,11 @@ class GDBServer(threading.Thread):
         self.selected_thread_g = 1
         self.selected_thread_c = 1
 
-        for core in self.target.cores:
-            self.is_target_running[core.core_number] = core.isRunning()
+#         for c in self.target.cores.itervalues():
+#             self.visible_cores[c.core_number] = c
+#             self.is_target_running[c.core_number] = c.isRunning()
+        self.visible_cores[0] = self.target.selected_core
+        self.is_target_running[0] = self.target.selected_core.isRunning()
 
         # Init semihosting and telnet console.
         if self.semihost_use_syscalls:
@@ -370,7 +375,8 @@ class GDBServer(threading.Thread):
                 if self.detach_event.isSet():
                     break
 
-                if self.packet_io.interrupt_event.isSet():
+                if self.packet_io.interrupt_event.isSet() or self.interrupt_flag:
+                    self.interrupt_flag = False
                     if self.non_stop:
                         self.target.halt()
                         self.is_target_running[self.target.selected_core.core_number] = False
@@ -498,7 +504,7 @@ class GDBServer(threading.Thread):
             return self.createRSPPacket("E01"), 0
 
     def checkCoreStates(self):
-        for core in self.target.cores:
+        for core in self.visible_cores.itervalues():
             if self.is_target_running[core.core_number]:
                 try:
                     if core.getState() == Target.TARGET_HALTED:
@@ -665,10 +671,11 @@ class GDBServer(threading.Thread):
         if self.non_stop and all(self.is_target_running.values()):
             return self.createRSPPacket("OK")
 
-        if not any(self.is_target_running.values()):
-            return self.createRSPPacket("S02")
-        else:
-            return self.createRSPPacket(self.getTResponse())
+#         if not any(self.is_target_running.values()):
+#             # TODO should return a 'T' stop response and specific thread (preferably the 'main' thread)
+#             return self.createRSPPacket("S02")
+#         else:
+        return self.createRSPPacket(self.getTResponse())
 
     def _get_resume_step_addr(self, data):
         if data is None:
@@ -689,7 +696,7 @@ class GDBServer(threading.Thread):
 
         addr = self._get_resume_step_addr(data)
         any_core_resumed = False
-        for core in self.target.cores:
+        for core in self.visible_cores.itervalues():
             if not core.isRunning():
                 any_core_resumed = True
                 core.resume()
@@ -708,14 +715,14 @@ class GDBServer(threading.Thread):
             if self.packet_io.interrupt_event.wait(0.01):
                 logging.debug("receive CTRL-C")
                 self.packet_io.interrupt_event.clear()
-                for core in self.target.cores:
+                for core in self.visible_cores.itervalues():
                     core.halt()
                 val = self.getTResponse(forceSignal=signals.SIGINT)
                 break
 
             try:
                 exit_resume = False
-                for core in self.target.cores:
+                for core in self.visible_cores.itervalues():
                     if core.getState() == Target.TARGET_HALTED:
                         # Handle semihosting
                         if self.enable_semihosting:
@@ -750,7 +757,7 @@ class GDBServer(threading.Thread):
         return self.createRSPPacket(self.getTResponse())
 
     def halt(self):
-        for core in self.target.cores:
+        for core in self.visible_cores.itervalues():
             core.halt()
         return self.createRSPPacket(self.getTResponse())
 
@@ -778,9 +785,32 @@ class GDBServer(threading.Thread):
         # vStopped, part of thread stop state notification sequence.
         elif 'Stopped' in cmd:
             # Because we only support one thread for now, we can just reply OK to vStopped.
+            # TODO handle vStopped for multicore
             return self.createRSPPacket("OK")
 
+        # vAttach
+        elif 'Attach' in cmd:
+            return self.vAttach(cmd)
+
+        # vCtrlC
+        elif "CtrlC" in cmd:
+            self.interrupt_flag = True
+
         return self.createRSPPacket("")
+
+    def vAttach(self, cmd):
+        try:
+            pid = int(cmd.split(';')[1], base=16)
+            core_num = pid - 1
+            core = self.target.cores[core_num]
+            self.visible_cores[core_num] = core
+            if not self.non_stop:
+                core.halt()
+            self.is_target_running[core_num] = core.isRunning()
+            self.target.select_core(core_num)
+            return self.stopReasonQuery()
+        except KeyError:
+            return self.createRSPPacket("E00")
 
     # Example: $vCont;s:1;c#c1
     def vCont(self, cmd):
@@ -790,7 +820,7 @@ class GDBServer(threading.Thread):
 
         default_action = None
         thread_actions = { } # our only thread
-        for core in self.target.cores:
+        for core in self.visible_cores.itervalues():
             thread_actions[core.core_number + 1] = None
 
         for op in ops:
@@ -812,7 +842,7 @@ class GDBServer(threading.Thread):
         logging.debug("thread_actions=%s; default_action=%s", repr(thread_actions), default_action)
 
 #         if self.non_stop:
-        for core in self.target.cores:
+        for core in self.visible_cores.itervalues():
             core_thread_id = core.core_number + 1
             if thread_actions[core_thread_id] is None:
 #                 if default_action is None:
@@ -843,7 +873,7 @@ class GDBServer(threading.Thread):
                 self.is_target_running[core.core_number] = False
                 self.sendStopNotification(forceSignal=0)
 #         else:
-#             for core in self.target.cores:
+#             for core in self.visible_cores:
 #
 #             if default_action in ('c', 'C'):
 #                 return self.resume(None)
@@ -1078,7 +1108,6 @@ class GDBServer(threading.Thread):
                 return None
 
         elif query[0].startswith('C'):
-
             return self.createRSPPacket("QC%s" % self.getThreadIDForCore(self.target.selected_core))
 
         elif query[0].find('Attached') != -1:
@@ -1280,18 +1309,18 @@ class GDBServer(threading.Thread):
 
     def getThreadsXML(self):
         root = Element('threads')
-        c = self.target.cores[0]
-#         for c in self.target.cores:
-        t = SubElement(root, 'thread', id=self.getThreadIDForCore(c), core=str(c.core_number))
+#         c = self.visible_cores[0]
+        for c in self.visible_cores.itervalues():
+            t = SubElement(root, 'thread', id=self.getThreadIDForCore(c), core=str(c.core_number))
 
-        state = c.getState()
-        CORE_STATUS_DESC = {
-            Target.TARGET_HALTED : "Halted",
-            Target.TARGET_RUNNING : "Running",
-            Target.TARGET_RESET : "Reset",
-            Target.TARGET_SLEEPING : "Sleeping",
-            Target.TARGET_LOCKUP : "Lockup",
-            }
-        t.text = CORE_STATUS_DESC[state]
+            state = c.getState()
+            CORE_STATUS_DESC = {
+                Target.TARGET_HALTED : "Halted",
+                Target.TARGET_RUNNING : "Running",
+                Target.TARGET_RESET : "Reset",
+                Target.TARGET_SLEEPING : "Sleeping",
+                Target.TARGET_LOCKUP : "Lockup",
+                }
+            t.text = CORE_STATUS_DESC[state]
         return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
 

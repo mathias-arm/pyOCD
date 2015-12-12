@@ -442,6 +442,10 @@ class GDBServer(threading.Thread):
             if msg[1] == '?':
                 return self.stopReasonQuery(), 0
 
+            # extended remote
+            elif msg[1] == '!':
+                return self.createRSPPacket("OK"), 0
+
             # we don't send immediately the response for C and S commands
             elif msg[1] == 'C' or msg[1] == 'c':
                 return self.resume(msg[1:]), 0
@@ -808,6 +812,7 @@ class GDBServer(threading.Thread):
                 core.halt()
             self.is_target_running[core_num] = core.isRunning()
             self.target.select_core(core_num)
+            logging.info("GDB attached to core #%d", core_num)
             return self.stopReasonQuery()
         except KeyError:
             return self.createRSPPacket("E00")

@@ -22,6 +22,7 @@ from gdb_socket import GDBSocket
 from gdb_websocket import GDBWebSocket
 from syscall import GDBSyscallIOHandler
 from ..target import semihost
+from .context_facade import GDBDebugContextFacade
 import signals
 import logging, threading, socket
 from struct import unpack
@@ -29,6 +30,7 @@ from time import sleep, time
 import sys
 import traceback
 import Queue
+from xml.etree.ElementTree import (Element, SubElement, tostring)
 
 CTRL_C = '\x03'
 
@@ -245,6 +247,8 @@ class GDBServer(threading.Thread):
         self.lock = threading.Lock()
         self.shutdown_event = threading.Event()
         self.detach_event = threading.Event()
+        self.target_context = self.target.getTargetContext()
+        self.target_facade = GDBDebugContextFacade(self.target_context)
         if self.wss_server == None:
             self.abstract_socket = GDBSocket(self.port, self.packet_size)
             if self.serve_local_only:
@@ -537,7 +541,7 @@ class GDBServer(threading.Thread):
         if self.non_stop and self.is_target_running:
             return self.createRSPPacket("OK")
 
-        return self.createRSPPacket(self.target.getTResponse())
+        return self.createRSPPacket(self.getTResponse())
 
     def _get_resume_step_addr(self, data):
         if data is None:
@@ -570,7 +574,7 @@ class GDBServer(threading.Thread):
                 logging.debug("receive CTRL-C")
                 self.packet_io.interrupt_event.clear()
                 self.target.halt()
-                val = self.target.getTResponse(forceSignal=signals.SIGINT)
+                val = self.getTResponse(forceSignal=signals.SIGINT)
                 break
 
             try:
@@ -584,7 +588,7 @@ class GDBServer(threading.Thread):
                             continue
 
                     logging.debug("state halted")
-                    val = self.target.getTResponse()
+                    val = self.getTResponse()
                     break
             except Exception as e:
                 try:
@@ -593,7 +597,7 @@ class GDBServer(threading.Thread):
                     pass
                 traceback.print_exc()
                 logging.debug('Target is unavailable temporarily.')
-                val = 'S%02x' % self.target.getSignalValue()
+                val = 'S%02x' % self.target_facade.getSignalValue()
                 break
 
         return self.createRSPPacket(val)
@@ -602,20 +606,20 @@ class GDBServer(threading.Thread):
         addr = self._get_resume_step_addr(data)
         logging.debug("GDB step: %s", data)
         self.target.step(not self.step_into_interrupt)
-        return self.createRSPPacket(self.target.getTResponse())
+        return self.createRSPPacket(self.getTResponse())
 
     def halt(self):
         self.target.halt()
-        return self.createRSPPacket(self.target.getTResponse())
+        return self.createRSPPacket(self.getTResponse())
 
     def sendStopNotification(self, forceSignal=None):
-        data = self.target.getTResponse(forceSignal=forceSignal)
+        data = self.getTResponse(forceSignal=forceSignal)
         packet = '%Stop:' + data + '#' + checksum(data)
         self.packet_io.send(packet)
 
     def vCommand(self, data):
         cmd = data.split('#')[0]
-        logging.debug("GDB vCommand: %s", cmd)
+#         logging.debug("GDB vCommand: %s", cmd)
 
         # Flash command.
         if cmd.startswith('Flash'):
@@ -853,19 +857,19 @@ class GDBServer(threading.Thread):
         return self.createRSPPacket(resp)
 
     def readRegister(self, which):
-        return self.createRSPPacket(self.target.gdbGetRegister(which))
+        return self.createRSPPacket(self.target_facade.gdbGetRegister(which))
 
     def writeRegister(self, data):
         reg = int(data.split('=')[0], 16)
         val = data.split('=')[1].split('#')[0]
-        self.target.setRegister(reg, val)
+        self.target_facade.setRegister(reg, val)
         return self.createRSPPacket("OK")
 
     def getRegisters(self):
-        return self.createRSPPacket(self.target.getRegisterContext())
+        return self.createRSPPacket(self.target_facade.getRegisterContext())
 
     def setRegisters(self, data):
-        self.target.setRegisterContext(data)
+        self.target_facade.setRegisterContext(data)
         return self.createRSPPacket("OK")
 
     def handleQuery(self, msg):
@@ -1019,7 +1023,7 @@ class GDBServer(threading.Thread):
         elif query == 'read_feature':
             xml = self.target.getTargetXML()
         elif query == 'threads':
-            xml = self.target.getThreadsXML()
+            xml = self.getThreadsXML()
         else:
             raise RuntimeError("Invalid XML query (%s)" % query)
 
@@ -1086,4 +1090,20 @@ class GDBServer(threading.Thread):
                 break
 
         return -1, 0
+
+    def getTResponse(self, forceSignal=None):
+        response = self.target_facade.getTResponse(forceSignal)
+
+        # Append thread and core
+        response += "thread:1;core:0;"
+#         response += "thread:%x;core:%x;" % (self.core_number + 1, self.core_number)
+
+        return response
+
+    def getThreadsXML(self):
+        root = Element('threads')
+        t = SubElement(root, 'thread', id="1", core="0")
+        t.text = "Thread mode"
+        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+
 

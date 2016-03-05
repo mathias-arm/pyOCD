@@ -208,17 +208,11 @@ class Target(object):
         else:
             return None
 
-    def getRegisterContext(self):
+    def getTargetContext(self, core=None):
         raise NotImplementedError()
 
-    def setRegisterContext(self, data):
+    def getRootContext(self, core=None):
         raise NotImplementedError()
 
-    def setRegister(self, reg, data):
-        raise NotImplementedError()
-
-    def getTResponse(self, gdbInterrupt=False):
-        raise NotImplementedError()
-
-    def getSignalValue(self):
+    def setRootContext(self, context, core=None):
         raise NotImplementedError()

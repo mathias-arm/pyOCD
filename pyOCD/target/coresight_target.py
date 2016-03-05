@@ -18,6 +18,7 @@
 from .target import Target
 from ..coresight import (dap, ap, cortex_m)
 from ..svd import (SVDFile, SVDLoader)
+from ..debug.context import DebugContext
 import threading
 import logging
 from xml.etree.ElementTree import (Element, SubElement, tostring)
@@ -34,6 +35,8 @@ class CoreSightTarget(Target):
         self.dp = dap.DebugPort(link)
         self._selected_core = 0
         self._svd_load_thread = None
+        self._root_contexts = {}
+        self._core_contexts = {}
 
     @property
     def selected_core(self):
@@ -71,6 +74,8 @@ class CoreSightTarget(Target):
 
     def add_core(self, core):
         self.cores[0] = core
+        self._core_contexts[0] = DebugContext(core)
+        self._root_contexts[0] = None
 
     def init(self, bus_accessible=True):
         # Start loading the SVD file
@@ -213,4 +218,22 @@ class CoreSightTarget(Target):
         t = SubElement(root, 'thread', id="1", core="0")
         t.text = "Thread mode"
         return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+
+    def getTargetContext(self, core=None):
+        if core is None:
+            core = self._selected_core
+        return self._core_contexts[core]
+
+    def getRootContext(self, core=None):
+        if core is None:
+            core = self._selected_core
+        if self._root_contexts[core] is None:
+            return self.getTargetContext()
+        else:
+            return self._root_contexts[core]
+
+    def setRootContext(self, context, core=None):
+        if core is None:
+            core = self._selected_core
+        self._root_contexts[core] = context
 

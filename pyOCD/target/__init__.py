@@ -50,7 +50,6 @@ import target_w7500
 import target_lpc11xx_32
 import target_lpc824
 import target_ncs36510
-import semihost
 import target_lpc4088
 import target_lpc4088qsb
 import target_lpc4088dm

@@ -66,6 +66,12 @@ class CoreSightTarget(Target):
             self._svd_load_thread = SVDLoader(self._svd_location, svdLoadCompleted)
             self._svd_load_thread.load()
 
+    def add_ap(self, ap):
+        self.aps[ap.ap_num] = ap
+
+    def add_core(self, core):
+        self.cores[0] = core
+
     def init(self, bus_accessible=True):
         # Start loading the SVD file
         self.loadSVD()
@@ -75,13 +81,15 @@ class CoreSightTarget(Target):
         self.dp.power_up_debug()
 
         # Create an AHB-AP for the CPU.
-        self.aps[0] = ap.AHB_AP(self.dp, 0)
-        self.aps[0].init(bus_accessible)
+        ap0 = ap.AHB_AP(self.dp, 0)
+        ap0.init(bus_accessible)
+        self.add_ap(ap0)
 
         # Create CortexM core.
-        self.cores[0] = cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map)
+        core0 = cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map)
         if bus_accessible:
-            self.cores[0].init()
+            core0.init()
+        self.add_core(core0)
 
     def disconnect(self):
         for core in self.cores.values():

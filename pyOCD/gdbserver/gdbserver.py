@@ -17,12 +17,14 @@
 
 from ..target.target import Target
 from pyOCD.pyDAPAccess import DAPAccess
-from ..utility.conversion import hexToByteList, hexEncode, hexDecode
+from ..utility.conversion import hexToByteList, hexEncode, hexDecode, hex8leToU32le
 from gdb_socket import GDBSocket
 from gdb_websocket import GDBWebSocket
 from syscall import GDBSyscallIOHandler
 from ..target import semihost
 from .context_facade import GDBDebugContextFacade
+from .symbols import GDBSymbolProvider
+from ..rtos import RTOS
 import signals
 import logging, threading, socket
 from struct import unpack
@@ -249,6 +251,8 @@ class GDBServer(threading.Thread):
         self.detach_event = threading.Event()
         self.target_context = self.target.getTargetContext()
         self.target_facade = GDBDebugContextFacade(self.target_context)
+        self.thread_provider = None
+        self.did_init_thread_providers = False
         if self.wss_server == None:
             self.abstract_socket = GDBSocket(self.port, self.packet_size)
             if self.serve_local_only:
@@ -931,8 +935,10 @@ class GDBServer(threading.Thread):
             return self.createRSPPacket(resp)
 
         elif 'Symbol' in query[0]:
-            resp = "OK"
-            return self.createRSPPacket(resp)
+            logging.debug(query)
+            if self.did_init_thread_providers:
+                return self.createRSPPacket("OK")
+            return self.initThreadProviders()
 
         elif query[0].startswith('Rcmd,'):
             cmd = hexDecode(query[0][5:].split('#')[0])
@@ -940,6 +946,51 @@ class GDBServer(threading.Thread):
 
         else:
             return self.createRSPPacket("")
+
+    def initThreadProviders(self):
+        symbol_provider = GDBSymbolProvider(self)
+
+        try:
+            for rtosName, rtosClass in RTOS.iteritems():
+                logging.info("Attempting to load %s", rtosName)
+                rtos = rtosClass(self.target)
+                if rtos.init(symbol_provider) and rtos.is_enabled:
+                    logging.info("%s loaded successfully", rtosName)
+                    self.thread_provider = rtos
+                    break
+        except RuntimeError as e:
+            logging.error("Error during symbol lookup: " + str(e))
+
+        self.did_init_thread_providers = True
+
+        # Done with symbol processing.
+        return self.createRSPPacket("OK")
+
+    def getSymbol(self, name):
+        # Send the symbol request.
+        request = self.createRSPPacket('qSymbol:' + hexEncode(name))
+        logging.debug("Sending:" + request)
+        self.packet_io.send(request)
+
+        # Read a packet.
+        packet = self.packet_io.receive()
+        logging.debug(packet)
+
+        # Parse symbol value reply packet.
+        packet = packet[1:-3]
+        if not packet.startswith('qSymbol:'):
+            raise RuntimeError("Got unexpected response from gdb when asking for symbol value")
+        packet = packet[8:]
+        symValue, symName = packet.split(':')
+
+        symName = hexDecode(symName)
+        if symName != name:
+            raise RuntimeError("Symbol value reply from gdb has unexpected symbol name")
+        if symValue:
+            symValue = hex8leToU32le(symValue)
+        else:
+            return None
+        return symValue
 
     # TODO rewrite the remote command handler
     def handleRemoteCommand(self, cmd):
@@ -1101,6 +1152,9 @@ class GDBServer(threading.Thread):
         return response
 
     def getThreadsXML(self):
+        if self.thread_provider is not None:
+           self.thread_provider.get_threads()
+
         root = Element('threads')
         t = SubElement(root, 'thread', id="1", core="0")
         t.text = "Thread mode"

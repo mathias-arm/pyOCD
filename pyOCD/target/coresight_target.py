@@ -73,9 +73,9 @@ class CoreSightTarget(Target):
         self.aps[ap.ap_num] = ap
 
     def add_core(self, core):
-        self.cores[0] = core
-        self._core_contexts[0] = DebugContext(core)
-        self._root_contexts[0] = None
+        self.cores[core.core_number] = core
+        self._core_contexts[core.core_number] = DebugContext(core)
+        self._root_contexts[core.core_number] = None
 
     def init(self, bus_accessible=True):
         # Start loading the SVD file

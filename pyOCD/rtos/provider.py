@@ -61,3 +61,6 @@ class ThreadProvider(object):
     def current_thread(self):
         raise NotImplementedError()
 
+    def is_valid_thread_id(self, threadId):
+        raise NotImplementedError()
+

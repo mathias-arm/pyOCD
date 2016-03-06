@@ -461,7 +461,7 @@ class GDBServer(threading.Thread):
                 return self.step(msg[1:]), 0
 
             elif msg[1] == 'T': # check if thread is alive
-                return self.createRSPPacket('OK'), 0
+                return self.isThreadAlive(msg[1:]), 0
 
             elif msg[1] == 'v':
                 return self.vCommand(msg[2:]), 0
@@ -539,6 +539,14 @@ class GDBServer(threading.Thread):
         else:
             self.target.removeWatchpoint(addr, size, watchpoint_type)
         return self.createRSPPacket("OK")
+
+    def isThreadAlive(self, data):
+        threadId = int(data[1:-3], 16)
+        logging.debug("Checking liveness of thread id=%x", threadId)
+        if self.thread_provider is not None and not self.thread_provider.is_valid_thread_id(threadId):
+            logging.debug("Thread id=%x is dead", threadId)
+            return self.createRSPPacket('E00')
+        return self.createRSPPacket('OK')
 
     def stopReasonQuery(self):
         # In non-stop mode, if no threads are stopped we need to reply with OK.
@@ -919,7 +927,14 @@ class GDBServer(threading.Thread):
                 return None
 
         elif query[0].startswith('C'):
-            return self.createRSPPacket("QC1")
+            if self.thread_provider is None:
+                return self.createRSPPacket("QC1")
+            else:
+                currentThread = self.thread_provider.current_thread
+                if currentThread is None:
+                    return self.createRSPPacket("QC1")
+                else:
+                    return self.createRSPPacket("QC%x" % currentThread.unique_id)
 
         elif query[0].find('Attached') != -1:
             return self.createRSPPacket("1")
@@ -1146,18 +1161,33 @@ class GDBServer(threading.Thread):
         response = self.target_facade.getTResponse(forceSignal)
 
         # Append thread and core
-        response += "thread:1;core:0;"
-#         response += "thread:%x;core:%x;" % (self.core_number + 1, self.core_number)
+        if self.thread_provider is None:
+            response += "thread:1;core:0;"
+        else:
+            currentThread = self.thread_provider.current_thread
+            if currentThread is None:
+                response += "thread:1;core:0;"
+            else:
+                response += "thread:%x;core:0;" % (currentThread.unique_id)
 
         return response
 
     def getThreadsXML(self):
-        if self.thread_provider is not None:
-           self.thread_provider.get_threads()
-
         root = Element('threads')
-        t = SubElement(root, 'thread', id="1", core="0")
-        t.text = "Thread mode"
-        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+
+        if self.thread_provider is None:
+            t = SubElement(root, 'thread', id="1", core="0")
+            t.text = "Thread mode"
+        else:
+            logging.debug("Getting threads")
+            threads = self.thread_provider.get_threads()
+            for thread in threads:
+                hexId = "%x" % thread.unique_id
+                t = SubElement(root, 'thread', id=hexId, core="0")
+                t.text = thread.name
+
+        result = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+        logging.debug(result)
+        return result
 
 

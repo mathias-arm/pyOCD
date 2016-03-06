@@ -36,7 +36,8 @@ class TargetThread(object):
     def is_current(self):
         raise NotImplementedError()
 
-    def get_context(self):
+    @property
+    def context(self):
         raise NotImplementedError()
 
 ## @brief Base class for RTOS support plugins.
@@ -51,6 +52,9 @@ class ThreadProvider(object):
         raise NotImplementedError()
 
     def get_threads(self):
+        raise NotImplementedError()
+
+    def get_thread(self, threadId):
         raise NotImplementedError()
 
     @property

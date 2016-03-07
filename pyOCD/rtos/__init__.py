@@ -16,8 +16,9 @@
 """
 
 from .argon import ArgonThreadProvider
+from .freertos import FreeRTOSThreadProvider
 
 RTOS = {
           'Argon' : ArgonThreadProvider,
-#           'FreeRTOS' : FreeRTOSThreadProvider,
+          'FreeRTOS' : FreeRTOSThreadProvider,
          }

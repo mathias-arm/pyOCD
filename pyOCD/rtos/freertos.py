@@ -22,21 +22,14 @@ from ..coresight.cortex_m import CORE_REGISTER
 from pyOCD.pyDAPAccess import DAPAccess
 import logging
 
-IS_RUNNING_OFFSET = 0x54
+FREERTOS_MAX_PRIORITIES	= 63
 
-ALL_OBJECTS_OFFSET = 0xb0
-ALL_OBJECTS_THREADS_OFFSET = 0
-
+LIST_SIZE = 20
+LIST_INDEX_OFFSET = 16
+LIST_NODE_NEXT_OFFSET = 8
+LIST_NODE_OBJECT_OFFSET = 12
 THREAD_STACK_POINTER_OFFSET = 0
-THREAD_EXTENDED_FRAME_OFFSET = 4
-THREAD_NAME_OFFSET = 8
-THREAD_STACK_BOTTOM_OFFSET = 12
-THREAD_PRIORITY_OFFSET = 16
-THREAD_STATE_OFFSET = 17
-THREAD_CREATED_NODE_OFFSET = 36
-
-LIST_NODE_NEXT_OFFSET = 0
-LIST_NODE_OBJ_OFFSET= 8
+THREAD_NAME_OFFSET = 52
 
 class TargetList(object):
     def __init__(self, context, ptr):
@@ -44,25 +37,30 @@ class TargetList(object):
         self._list = ptr
 
     def __iter__(self):
-        next = 0
-        head = self._context.read32(self._list)
-        node = head
-        is_valid = head != 0
+        prev = -1
+        found = 0
+        count = self._context.read32(self._list)
+        if count == 0:
+            return
 
-        while is_valid and next != head:
+        node = self._context.read32(self._list + LIST_INDEX_OFFSET)
+
+        while (node != 0) and (node != prev) and (found < count):
             try:
                 # Read the object from the node.
-                obj = self._context.read32(node + LIST_NODE_OBJ_OFFSET)
+                obj = self._context.read32(node + LIST_NODE_OBJECT_OFFSET)
                 yield obj
+                found += 1
 
-                next = self._context.read32(node + LIST_NODE_NEXT_OFFSET)
-                node = next
+                # Read next list node pointer.
+                prev = node
+                node = self._context.read32(node + LIST_NODE_NEXT_OFFSET)
             except DAPAccess.TransferError:
                 logging.debug("TransferError while reading list elements (node=0x%08x)", node)
                 break
 
 ## @brief
-class ArgonThreadContext(DebugContext):
+class FreeRTOSThreadContext(DebugContext):
     # SP is handled specially, so it is not in this dict.
     CORE_REGISTER_OFFSETS = {
                  0: 32, # r0
@@ -84,7 +82,7 @@ class ArgonThreadContext(DebugContext):
             }
 
     def __init__(self, parentContext, thread):
-        super(ArgonThreadContext, self).__init__(parentContext.core)
+        super(FreeRTOSThreadContext, self).__init__(parentContext.core)
         self._parent = parentContext
         self._thread = thread
 
@@ -163,16 +161,17 @@ class ArgonThreadContext(DebugContext):
         self._core.writeCoreRegistersRaw(reg_list, data_list)
 
 ## @brief Base class representing a thread on the target.
-class ArgonThread(TargetThread):
+class FreeRTOSThread(TargetThread):
     def __init__(self, targetContext, provider, base):
-        super(ArgonThread, self).__init__()
+        super(FreeRTOSThread, self).__init__()
         self._target_context = targetContext
         self._provider = provider
         self._base = base
-        self._thread_context = ArgonThreadContext(self._target_context, self)
+        self._thread_context = FreeRTOSThreadContext(self._target_context, self)
 
-        ptr = self._target_context.read32(self._base + THREAD_NAME_OFFSET)
-        self._name = read_c_string(self._target_context, ptr)
+        self._name = read_c_string(self._target_context, self._base + THREAD_NAME_OFFSET)
+        if len(self._name) == 0:
+            self._name = "Unnamed"
 
     @property
     def unique_id(self):
@@ -195,43 +194,94 @@ class ArgonThread(TargetThread):
         return self._thread_context
 
     def __str__(self):
-        return "<ArgonThread@0x%08x id=%x name=%s>" % (id(self), self.unique_id, self.name)
+        return "<FreeRTOSThread@0x%08x id=%x name=%s>" % (id(self), self.unique_id, self.name)
 
     def __repr__(self):
         return str(self)
 
 ## @brief Base class for RTOS support plugins.
-class ArgonThreadProvider(ThreadProvider):
+class FreeRTOSThreadProvider(ThreadProvider):
+
+    FREERTOS_SYMBOLS = [
+        "uxCurrentNumberOfTasks",
+        "pxCurrentTCB",
+        "pxReadyTasksLists",
+        "xDelayedTaskList1",
+        "xDelayedTaskList2",
+        "xPendingReadyList",
+        "xSuspendedTaskList",
+        "xTasksWaitingTermination",
+#         "pxDelayedTaskList",
+#         "pxOverflowDelayedTaskList",
+#         "uxTopUsedPriority",
+        ]
+
     def __init__(self, target):
-        super(ArgonThreadProvider, self).__init__(target)
+        super(FreeRTOSThreadProvider, self).__init__(target)
         self._target_context = self._target.getTargetContext()
-        self.g_ar = None
-        self._all_threads = None
+        self._symbols = None
+        self._top_priority = 0
         self._threads = []
         self._threads_dict = {}
 
     def init(self, symbolProvider):
-        self.g_ar = symbolProvider.get_symbol_value("g_ar")
-        if self.g_ar is None:
+        self._symbols = self._lookup_symbols(self.FREERTOS_SYMBOLS, symbolProvider)
+        if self._symbols is None:
             return False
-        logging.info("Argon: g_ar = 0x%08x", self.g_ar)
 
-        self._all_threads = self.g_ar + ALL_OBJECTS_OFFSET + ALL_OBJECTS_THREADS_OFFSET
+        # Check for the expected list size.
+        delta = self._symbols['xDelayedTaskList2'] - self._symbols['xDelayedTaskList1']
+        if delta != LIST_SIZE:
+            logging.warning("FreeRTOS: list size is unexpected")
+            return False
+
+        delta = self._symbols['xDelayedTaskList1'] - self._symbols['pxReadyTasksLists']
+        if delta % LIST_SIZE:
+            logging.warning("FreeRTOS: pxReadyTasksLists size is unexpected, maybe an unsupported version of FreeRTOS")
+            return False
+        self._top_priority = delta // LIST_SIZE
+        if self._top_priority > FREERTOS_MAX_PRIORITIES:
+            logging.warning("FreeRTOS: number of priorities is too large (%d)", topPriority)
+            return False
+        logging.debug("FreeRTOS: number of priorities is %d", self._top_priority)
 
         return True
 
     def _build_thread_list(self):
-        allThreads = TargetList(self._target_context, self._all_threads)
         self._threads = []
         self._threads_dict = {}
-        for threadBase in allThreads:
-            try:
-                t = ArgonThread(self._target_context, self, threadBase)
-                logging.info("Thread 0x%08x (%s)", threadBase, t.name)
-                self._threads.append(t)
-                self._threads_dict[t.unique_id] = t
-            except DAPAccess.TransferError:
-                logging.debug("TransferError while examining thread 0x%08x", threadBase)
+
+        # Read the number of threads.
+        threadCount = self._target_context.read32(self._symbols['uxCurrentNumberOfTasks'])
+
+        # Read the current thread.
+        currentThread = self._target_context.read32(self._symbols['pxCurrentTCB'])
+
+        if threadCount == 0 or currentThread == 0:
+            # TODO handle me
+            return
+
+        # Build up list of all the thread lists we need to scan.
+        listsToRead = []
+        for i in range(self._top_priority):
+            listsToRead.append(self._symbols['pxReadyTasksLists'] + i * LIST_SIZE)
+
+        listsToRead.append(self._symbols['xDelayedTaskList1'])
+        listsToRead.append(self._symbols['xDelayedTaskList2'])
+        listsToRead.append(self._symbols['xPendingReadyList'])
+        listsToRead.append(self._symbols['xSuspendedTaskList'])
+        listsToRead.append(self._symbols['xTasksWaitingTermination'])
+
+        for listPtr in listsToRead:
+            allThreads = TargetList(self._target_context, listPtr)
+            for threadBase in allThreads:
+                try:
+                    t = FreeRTOSThread(self._target_context, self, threadBase)
+                    logging.info("Thread 0x%08x (%s)", threadBase, t.name)
+                    self._threads.append(t)
+                    self._threads_dict[t.unique_id] = t
+                except DAPAccess.TransferError:
+                    logging.debug("TransferError while examining thread 0x%08x", threadBase)
 
     def get_threads(self):
         if not self.is_enabled:
@@ -247,7 +297,7 @@ class ArgonThreadProvider(ThreadProvider):
 
     @property
     def is_enabled(self):
-        return self.g_ar is not None and self.get_is_running()
+        return self._symbols is not None and self.get_is_running()
 
     @property
     def current_thread(self):
@@ -269,16 +319,14 @@ class ArgonThreadProvider(ThreadProvider):
     def get_current_thread_id(self):
         if not self.is_enabled:
             return None
-        return self._target_context.read32(self.g_ar)
+        return self._target_context.read32(self._symbols['pxCurrentTCB'])
 
     def get_ipsr(self):
         return self._target_context.readCoreRegister('xpsr') & 0xff
 
     def get_is_running(self):
-        if self.g_ar is None:
+        if self._symbols is None:
             return False
-        flag = self._target_context.read8(self.g_ar + IS_RUNNING_OFFSET)
-        logging.debug("g_ar.isRunning@0x%08x = %d", self.g_ar + IS_RUNNING_OFFSET, flag)
-        return flag != 0
+        return self._target_context.read32(self._symbols['pxCurrentTCB']) != 0
 
 

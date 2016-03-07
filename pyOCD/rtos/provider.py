@@ -15,6 +15,8 @@
  limitations under the License.
 """
 
+import logging
+
 ## @brief Base class representing a thread on the target.
 class TargetThread(object):
     def __init__(self):
@@ -44,6 +46,16 @@ class TargetThread(object):
 class ThreadProvider(object):
     def __init__(self, target):
         self._target = target
+
+    def _lookup_symbols(self, symbolList, symbolProvider):
+        syms = {}
+        for name in symbolList:
+            addr = symbolProvider.get_symbol_value(name)
+            logging.debug("Value for symbol %s = %s", name, repr(addr))
+            if addr is None:
+                return None
+            syms[name] = addr
+        return syms
 
     ##
     # @retval True The provider was successfully initialzed.

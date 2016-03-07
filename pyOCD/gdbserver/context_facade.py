@@ -38,6 +38,13 @@ class GDBDebugContextFacade(object):
         self._context = context
         self._register_list = self._context.core.register_list
 
+    @property
+    def context(self):
+        return self._context
+
+    def set_context(self, newContext):
+        self._context = newContext
+
     def getRegisterContext(self):
         """
         return hexadecimal dump of registers as expected by GDB

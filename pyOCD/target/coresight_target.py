@@ -104,6 +104,10 @@ class CoreSightTarget(Target):
     def readIDCode(self):
         return self.dp.dpidr
 
+    @property
+    def run_token(self):
+        return self.selected_core.run_token
+
     def halt(self):
         return self.selected_core.halt()
 

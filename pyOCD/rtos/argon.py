@@ -236,13 +236,13 @@ class ArgonThreadProvider(ThreadProvider):
     def get_threads(self):
         if not self.is_enabled:
             return []
-        self._build_thread_list()
+        self.update_threads()
         return self._threads
 
     def get_thread(self, threadId):
         if not self.is_enabled:
             return None
-        self._build_thread_list()
+        self.update_threads()
         return self._threads_dict.get(threadId, None)
 
     @property
@@ -253,7 +253,7 @@ class ArgonThreadProvider(ThreadProvider):
     def current_thread(self):
         if not self.is_enabled:
             return None
-        self._build_thread_list()
+        self.update_threads()
         id = self.get_current_thread_id()
         try:
             return self._threads_dict[id]
@@ -263,7 +263,7 @@ class ArgonThreadProvider(ThreadProvider):
     def is_valid_thread_id(self, threadId):
         if not self.is_enabled:
             return False
-        self._build_thread_list()
+        self.update_threads()
         return threadId in self._threads_dict
 
     def get_current_thread_id(self):

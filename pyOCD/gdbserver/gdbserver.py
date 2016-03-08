@@ -253,6 +253,7 @@ class GDBServer(threading.Thread):
         self.target_facade = GDBDebugContextFacade(self.target_context)
         self.thread_provider = None
         self.did_init_thread_providers = False
+        self.current_thread_id = 0
         if self.wss_server == None:
             self.abstract_socket = GDBSocket(self.port, self.packet_size)
             if self.serve_local_only:
@@ -564,15 +565,37 @@ class GDBServer(threading.Thread):
         else:
             return self.createRSPPacket('E01')
 
+        self.current_thread_id = thread_id
         return self.createRSPPacket('OK')
 
     def isThreadAlive(self, data):
         threadId = int(data[1:-3], 16)
-        logging.debug("Checking liveness of thread id=%x", threadId)
-        if self.is_threading_enabled() and not self.thread_provider.is_valid_thread_id(threadId):
-            logging.debug("Thread id=%x is dead", threadId)
+#         logging.debug("Checking liveness of thread id=%x", threadId)
+
+        if self.is_threading_enabled():
+            isAlive = self.thread_provider.is_valid_thread_id(threadId)
+        else:
+            isAlive = (threadId == 1)
+
+        if isAlive:
+#             logging.debug("Thread id=%x is alive", threadId)
+            return self.createRSPPacket('OK')
+        else:
+#             logging.debug("Thread id=%x is dead", threadId)
+            self.validateDebugContext()
             return self.createRSPPacket('E00')
-        return self.createRSPPacket('OK')
+
+    def validateDebugContext(self):
+        if self.is_threading_enabled():
+            if not self.thread_provider.is_valid_thread_id(self.current_thread_id):
+                logging.debug("Current thread %x is no longer valid, switching context to target", self.current_thread_id)
+                self.target_facade.set_context(self.target_context)
+                self.current_thread_id = 0
+        else:
+            if self.current_thread_id != 1:
+                logging.debug("Current thread %x is no longer valid, switching context to target", self.current_thread_id)
+                self.target_facade.set_context(self.target_context)
+                self.current_thread_id = 1
 
     def stopReasonQuery(self):
         # In non-stop mode, if no threads are stopped we need to reply with OK.
@@ -625,7 +648,8 @@ class GDBServer(threading.Thread):
                             self.target.resume()
                             continue
 
-                    logging.debug("state halted")
+                    pc = self.target.readCoreRegister('pc')
+                    logging.debug("state halted; pc=0x%08x", pc)
                     val = self.getTResponse()
                     break
             except Exception as e:
@@ -965,11 +989,12 @@ class GDBServer(threading.Thread):
             if not self.is_threading_enabled():
                 return self.createRSPPacket("QC1")
             else:
-                currentThread = self.thread_provider.current_thread
-                if currentThread is None:
-                    return self.createRSPPacket("QC1")
-                else:
-                    return self.createRSPPacket("QC%x" % currentThread.unique_id)
+#                 currentThread = self.thread_provider.current_thread
+#                 if currentThread is None:
+#                     return self.createRSPPacket("QC1")
+#                 else:
+#                     return self.createRSPPacket("QC%x" % currentThread.unique_id)
+                return self.createRSPPacket("QC%x" % self.current_thread_id)
 
         elif query[0].find('Attached') != -1:
             return self.createRSPPacket("1")
@@ -1190,6 +1215,7 @@ class GDBServer(threading.Thread):
         return -1, 0
 
     def getTResponse(self, forceSignal=None):
+        self.validateDebugContext()
         response = self.target_facade.getTResponse(forceSignal)
 
         # Append thread and core
@@ -1201,7 +1227,7 @@ class GDBServer(threading.Thread):
                 response += "thread:1;core:0;"
             else:
                 response += "thread:%x;core:0;" % (currentThread.unique_id)
-
+        logging.debug("Tresponse=%s", response)
         return response
 
     def getThreadsXML(self):
@@ -1211,15 +1237,20 @@ class GDBServer(threading.Thread):
             t = SubElement(root, 'thread', id="1", core="0")
             t.text = "Thread mode"
         else:
-            logging.debug("Getting threads")
             threads = self.thread_provider.get_threads()
             for thread in threads:
                 hexId = "%x" % thread.unique_id
                 t = SubElement(root, 'thread', id=hexId, core="0")
-                t.text = thread.name
+
+                desc = thread.description
+                if desc:
+                    desc = thread.name + "; " + desc
+                else:
+                    desc = thread.name
+                t.text = desc
 
         result = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
-        logging.debug(result)
+#         logging.debug(result)
         return result
 
     def is_threading_enabled(self):

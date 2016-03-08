@@ -28,7 +28,9 @@ LIST_SIZE = 20
 LIST_INDEX_OFFSET = 16
 LIST_NODE_NEXT_OFFSET = 8
 LIST_NODE_OBJECT_OFFSET = 12
+
 THREAD_STACK_POINTER_OFFSET = 0
+THREAD_PRIORITY_OFFSET = 44
 THREAD_NAME_OFFSET = 52
 
 class TargetList(object):
@@ -162,16 +164,45 @@ class FreeRTOSThreadContext(DebugContext):
 
 ## @brief Base class representing a thread on the target.
 class FreeRTOSThread(TargetThread):
+    RUNNING = 1
+    READY = 2
+    BLOCKED = 3
+    SUSPENDED = 4
+    DELETED = 5
+
+    STATE_NAMES = {
+            RUNNING : "Running",
+            READY : "Ready",
+            BLOCKED : "Blocked",
+            SUSPENDED : "Suspended",
+            DELETED : "Deleted",
+        }
+
     def __init__(self, targetContext, provider, base):
         super(FreeRTOSThread, self).__init__()
         self._target_context = targetContext
         self._provider = provider
         self._base = base
+        self._state = FreeRTOSThread.READY
         self._thread_context = FreeRTOSThreadContext(self._target_context, self)
+
+        self._priority = self._target_context.read32(self._base + THREAD_PRIORITY_OFFSET)
 
         self._name = read_c_string(self._target_context, self._base + THREAD_NAME_OFFSET)
         if len(self._name) == 0:
             self._name = "Unnamed"
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        self._state = value
+
+    @property
+    def priority(self):
+        return self._priority
 
     @property
     def unique_id(self):
@@ -183,7 +214,7 @@ class FreeRTOSThread(TargetThread):
 
     @property
     def description(self):
-        return ""
+        return "%s; Priority %d" % (self.STATE_NAMES[self.state], self.priority)
 
     @property
     def is_current(self):
@@ -211,16 +242,14 @@ class FreeRTOSThreadProvider(ThreadProvider):
         "xPendingReadyList",
         "xSuspendedTaskList",
         "xTasksWaitingTermination",
-#         "pxDelayedTaskList",
-#         "pxOverflowDelayedTaskList",
-#         "uxTopUsedPriority",
+        "uxTopReadyPriority",
         ]
 
     def __init__(self, target):
         super(FreeRTOSThreadProvider, self).__init__(target)
         self._target_context = self._target.getTargetContext()
         self._symbols = None
-        self._top_priority = 0
+        self._total_priorities = 0
         self._threads = []
         self._threads_dict = {}
 
@@ -239,11 +268,11 @@ class FreeRTOSThreadProvider(ThreadProvider):
         if delta % LIST_SIZE:
             logging.warning("FreeRTOS: pxReadyTasksLists size is unexpected, maybe an unsupported version of FreeRTOS")
             return False
-        self._top_priority = delta // LIST_SIZE
-        if self._top_priority > FREERTOS_MAX_PRIORITIES:
-            logging.warning("FreeRTOS: number of priorities is too large (%d)", topPriority)
+        self._total_priorities = delta // LIST_SIZE
+        if self._total_priorities > FREERTOS_MAX_PRIORITIES:
+            logging.warning("FreeRTOS: number of priorities is too large (%d)", self._total_priorities)
             return False
-        logging.debug("FreeRTOS: number of priorities is %d", self._top_priority)
+        logging.debug("FreeRTOS: number of priorities is %d", self._total_priorities)
 
         return True
 
@@ -261,38 +290,51 @@ class FreeRTOSThreadProvider(ThreadProvider):
             # TODO handle me
             return
 
+        # Read the top ready priority.
+        topPriority = self._target_context.read32(self._symbols['uxTopReadyPriority'])
+        if topPriority > self._total_priorities:
+            logging.warning("FreeRTOS: top ready priority (%d) is greater than the total number of priorities (%d)", topPriority, self._total_priorities)
+            return
+
         # Build up list of all the thread lists we need to scan.
         listsToRead = []
-        for i in range(self._top_priority):
-            listsToRead.append(self._symbols['pxReadyTasksLists'] + i * LIST_SIZE)
+        for i in range(topPriority + 1):
+            listsToRead.append((self._symbols['pxReadyTasksLists'] + i * LIST_SIZE, FreeRTOSThread.READY))
 
-        listsToRead.append(self._symbols['xDelayedTaskList1'])
-        listsToRead.append(self._symbols['xDelayedTaskList2'])
-        listsToRead.append(self._symbols['xPendingReadyList'])
-        listsToRead.append(self._symbols['xSuspendedTaskList'])
-        listsToRead.append(self._symbols['xTasksWaitingTermination'])
+        listsToRead.append((self._symbols['xDelayedTaskList1'], FreeRTOSThread.BLOCKED))
+        listsToRead.append((self._symbols['xDelayedTaskList2'], FreeRTOSThread.BLOCKED))
+        listsToRead.append((self._symbols['xPendingReadyList'], FreeRTOSThread.READY))
+        listsToRead.append((self._symbols['xSuspendedTaskList'], FreeRTOSThread.SUSPENDED))
+        listsToRead.append((self._symbols['xTasksWaitingTermination'], FreeRTOSThread.DELETED))
 
-        for listPtr in listsToRead:
+        for listPtr, state in listsToRead:
             allThreads = TargetList(self._target_context, listPtr)
             for threadBase in allThreads:
                 try:
                     t = FreeRTOSThread(self._target_context, self, threadBase)
+                    if threadBase == currentThread:
+                        t.state = FreeRTOSThread.RUNNING
+                    else:
+                        t.state = state
                     logging.info("Thread 0x%08x (%s)", threadBase, t.name)
                     self._threads.append(t)
                     self._threads_dict[t.unique_id] = t
                 except DAPAccess.TransferError:
                     logging.debug("TransferError while examining thread 0x%08x", threadBase)
 
+        if len(self._threads) != threadCount:
+            logging.warning("FreeRTOS: thread count mismatch")
+
     def get_threads(self):
         if not self.is_enabled:
             return []
-        self._build_thread_list()
+        self.update_threads()
         return self._threads
 
     def get_thread(self, threadId):
         if not self.is_enabled:
             return None
-        self._build_thread_list()
+        self.update_threads()
         return self._threads_dict.get(threadId, None)
 
     @property
@@ -303,7 +345,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
     def current_thread(self):
         if not self.is_enabled:
             return None
-        self._build_thread_list()
+        self.update_threads()
         id = self.get_current_thread_id()
         try:
             return self._threads_dict[id]
@@ -313,7 +355,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
     def is_valid_thread_id(self, threadId):
         if not self.is_enabled:
             return False
-        self._build_thread_list()
+        self.update_threads()
         return threadId in self._threads_dict
 
     def get_current_thread_id(self):

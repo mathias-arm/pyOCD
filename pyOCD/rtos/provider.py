@@ -46,6 +46,7 @@ class TargetThread(object):
 class ThreadProvider(object):
     def __init__(self, target):
         self._target = target
+        self._last_run_token = -1
 
     def _lookup_symbols(self, symbolList, symbolProvider):
         syms = {}
@@ -62,6 +63,17 @@ class ThreadProvider(object):
     # @retval False The provider could not be initialized successfully.
     def init(self, symbolProvider):
         raise NotImplementedError()
+
+    def _build_thread_list(self):
+        raise NotImplementedError()
+
+    def update_threads(self):
+        token = self._target.run_token
+        if token == self._last_run_token:
+            # Target hasn't run since we last updated threads, so there is nothing to do.
+            return
+        self._last_run_token = token
+        self._build_thread_list()
 
     def get_threads(self):
         raise NotImplementedError()

@@ -316,7 +316,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
                         t.state = FreeRTOSThread.RUNNING
                     else:
                         t.state = state
-                    logging.info("Thread 0x%08x (%s)", threadBase, t.name)
+                    logging.debug("Thread 0x%08x (%s)", threadBase, t.name)
                     self._threads.append(t)
                     self._threads_dict[t.unique_id] = t
                 except DAPAccess.TransferError:

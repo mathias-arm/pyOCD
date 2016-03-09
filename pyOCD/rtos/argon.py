@@ -214,7 +214,7 @@ class ArgonThreadProvider(ThreadProvider):
         self.g_ar = symbolProvider.get_symbol_value("g_ar")
         if self.g_ar is None:
             return False
-        logging.info("Argon: g_ar = 0x%08x", self.g_ar)
+        logging.debug("Argon: g_ar = 0x%08x", self.g_ar)
 
         self._all_threads = self.g_ar + ALL_OBJECTS_OFFSET + ALL_OBJECTS_THREADS_OFFSET
 
@@ -227,7 +227,7 @@ class ArgonThreadProvider(ThreadProvider):
         for threadBase in allThreads:
             try:
                 t = ArgonThread(self._target_context, self, threadBase)
-                logging.info("Thread 0x%08x (%s)", threadBase, t.name)
+                logging.debug("Thread 0x%08x (%s)", threadBase, t.name)
                 self._threads.append(t)
                 self._threads_dict[t.unique_id] = t
             except DAPAccess.TransferError:

@@ -243,6 +243,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
         "xSuspendedTaskList",
         "xTasksWaitingTermination",
         "uxTopReadyPriority",
+        "xSchedulerRunning",
         ]
 
     def __init__(self, target):
@@ -369,6 +370,6 @@ class FreeRTOSThreadProvider(ThreadProvider):
     def get_is_running(self):
         if self._symbols is None:
             return False
-        return self._target_context.read32(self._symbols['pxCurrentTCB']) != 0
+        return self._target_context.read32(self._symbols['xSchedulerRunning']) != 0
 
 

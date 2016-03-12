@@ -26,7 +26,7 @@ FREERTOS_MAX_PRIORITIES	= 63
 
 LIST_SIZE = 20
 LIST_INDEX_OFFSET = 16
-LIST_NODE_NEXT_OFFSET = 8
+LIST_NODE_NEXT_OFFSET = 8 # 4?
 LIST_NODE_OBJECT_OFFSET = 12
 
 THREAD_STACK_POINTER_OFFSET = 0
@@ -82,6 +82,11 @@ class FreeRTOSThreadContext(DebugContext):
                  15: 56, # pc
                  16: 60, # xpsr
             }
+#                  'msp': 17,
+#                  'psp': 18,
+
+    # Registers that are not available on the stack for exceptions.
+    EXCEPTION_UNAVAILABLE_REGS = (4, 5, 6, 7, 8, 9, 10, 11)
 
     def __init__(self, parentContext, thread):
         super(FreeRTOSThreadContext, self).__init__(parentContext.core)
@@ -93,26 +98,28 @@ class FreeRTOSThreadContext(DebugContext):
         reg_vals = []
 
         inException = self._get_ipsr() > 0
-        isCurrent = self._is_current()
+        isCurrent = self._thread.is_current
 
-        sp = self._get_stack_pointer()
+        # If this is the current thread and we're not in an exception, just read the live registers.
+        if isCurrent and not inException:
+            return self._parent.readCoreRegistersRaw(reg_list)
+
+        sp = self._thread.get_stack_pointer()
         saveSp = sp
-        if not isCurrent:
-            sp -= 0x40
-        elif inException:
-            sp -= 0x20
 
         for reg in reg_list:
-            if isCurrent:
-                if not inException:
-                    # Not in an exception, so just read the live register.
-                    reg_vals.append(self._core.readCoreRegisterRaw(reg))
+            # Check for regs we can't access.
+            if isCurrent and inException:
+                if reg in self.EXCEPTION_UNAVAILABLE_REGS:
+                    reg_vals.append(0)
                     continue
-                else:
-                    # Check for regs we can't access.
-                    if reg in (4, 5, 6, 7, 8, 9, 10, 11):
-                        reg_vals.append(0)
-                        continue
+                if reg == 18 or reg == 13: # PSP
+                    logging.debug("FreeRTOS: psp = 0x%08x", saveSp)# + 0x20)
+                    reg_vals.append(saveSp)# + 0x20)
+                    continue
+#                 else:
+#                     reg_vals.append(self._core.readCoreRegisterRaw(reg))
+#                 continue
 
             # Must handle stack pointer specially.
             if reg == 13:
@@ -133,36 +140,13 @@ class FreeRTOSThreadContext(DebugContext):
 
         return reg_vals
 
-    def _get_stack_pointer(self):
-        sp = 0
-        if self._is_current():
-            # Read live process stack.
-            sp = self._core.readCoreRegister('sp')
-
-            # In IRQ context, we have to adjust for hw saved state.
-            if self._get_ipsr() > 0:
-                sp += 0x20
-        else:
-            # Get stack pointer saved in thread struct.
-            sp = self._core.read32(self._thread._base + THREAD_STACK_POINTER_OFFSET)
-
-            # Skip saved thread state.
-            sp += 0x40
-        return sp
-
     def _get_ipsr(self):
         return self._core.readCoreRegister('xpsr') & 0xff
-
-    def _has_extended_frame(self):
-        return False
-
-    def _is_current(self):
-        return self._thread.is_current
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
         self._core.writeCoreRegistersRaw(reg_list, data_list)
 
-## @brief Base class representing a thread on the target.
+## @brief A FreeRTOS task.
 class FreeRTOSThread(TargetThread):
     RUNNING = 1
     READY = 2
@@ -192,6 +176,15 @@ class FreeRTOSThread(TargetThread):
         if len(self._name) == 0:
             self._name = "Unnamed"
 
+    def get_stack_pointer(self):
+        if self.is_current:
+            # Read live process stack.
+            sp = self._target_context.readCoreRegister('psp')
+        else:
+            # Get stack pointer saved in thread struct.
+            sp = self._target_context.read32(self._base + THREAD_STACK_POINTER_OFFSET)
+        return sp
+
     @property
     def state(self):
         return self._state
@@ -218,7 +211,7 @@ class FreeRTOSThread(TargetThread):
 
     @property
     def is_current(self):
-        return self._provider.get_current_thread_id() == self.unique_id
+        return self._provider.get_actual_current_thread_id() == self.unique_id
 
     @property
     def context(self):
@@ -226,6 +219,46 @@ class FreeRTOSThread(TargetThread):
 
     def __str__(self):
         return "<FreeRTOSThread@0x%08x id=%x name=%s>" % (id(self), self.unique_id, self.name)
+
+    def __repr__(self):
+        return str(self)
+
+## @brief Class representing the handler mode.
+class HandlerModeThread(TargetThread):
+    def __init__(self, targetContext, provider):
+        super(HandlerModeThread, self).__init__()
+        self._target_context = targetContext
+        self._provider = provider
+
+    def get_stack_pointer(self):
+        return self._target_context.readCoreRegister('msp')
+
+    @property
+    def priority(self):
+        return 0
+
+    @property
+    def unique_id(self):
+        return 2
+
+    @property
+    def name(self):
+        return "Handler mode"
+
+    @property
+    def description(self):
+        return ""
+
+    @property
+    def is_current(self):
+        return self._provider.get_ipsr() > 0
+
+    @property
+    def context(self):
+        return self._target_context
+
+    def __str__(self):
+        return "<HandlerModeThread@0x%08x>" % (id(self))
 
     def __repr__(self):
         return str(self)
@@ -326,6 +359,13 @@ class FreeRTOSThreadProvider(ThreadProvider):
         if len(self._threads) != threadCount:
             logging.warning("FreeRTOS: thread count mismatch")
 
+        # Create fake handler mode thread.
+        if self.get_ipsr() > 0:
+            logging.debug("FreeRTOS: creating handler mode thread")
+            t = HandlerModeThread(self._target_context, self)
+            self._threads.append(t)
+            self._threads_dict[t.unique_id] = t
+
     def get_threads(self):
         if not self.is_enabled:
             return []
@@ -360,6 +400,13 @@ class FreeRTOSThreadProvider(ThreadProvider):
         return threadId in self._threads_dict
 
     def get_current_thread_id(self):
+        if not self.is_enabled:
+            return None
+        if self.get_ipsr() > 0:
+            return 2
+        return self.get_actual_current_thread_id()
+
+    def get_actual_current_thread_id(self):
         if not self.is_enabled:
             return None
         return self._target_context.read32(self._symbols['pxCurrentTCB'])

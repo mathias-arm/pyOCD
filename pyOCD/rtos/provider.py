@@ -67,13 +67,17 @@ class ThreadProvider(object):
     def _build_thread_list(self):
         raise NotImplementedError()
 
-    def update_threads(self):
+    def _is_thread_list_dirty(self):
         token = self._target.run_token
         if token == self._last_run_token:
             # Target hasn't run since we last updated threads, so there is nothing to do.
-            return
+            return False
         self._last_run_token = token
-        self._build_thread_list()
+        return True
+
+    def update_threads(self):
+        if self._is_thread_list_dirty():
+            self._build_thread_list()
 
     def get_threads(self):
         raise NotImplementedError()

@@ -987,6 +987,7 @@ class GDBServer(threading.Thread):
             if not self.is_threading_enabled():
                 return self.createRSPPacket("QC1")
             else:
+                self.validateDebugContext()
                 return self.createRSPPacket("QC%x" % self.current_thread_id)
 
         elif query[0].find('Attached') != -1:

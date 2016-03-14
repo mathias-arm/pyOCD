@@ -918,5 +918,3 @@ class CortexM(Target):
         t = SubElement(root, 'thread', id="1", core="0")
         t.text = "Thread mode"
         return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
-
-

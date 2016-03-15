@@ -202,6 +202,8 @@ class BreakpointManager(object):
         if bp is not None:
             self._breakpoints[addr] = bp
 
+        return True
+
     ## @brief Remove a breakpoint at a specific location.
     def remove_breakpoint(self, addr):
         try:

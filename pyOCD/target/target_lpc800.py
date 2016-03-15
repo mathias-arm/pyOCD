@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
@@ -32,7 +31,7 @@ class LPC800(CoreSightTarget):
         self._svd_location = SVDFile(vendor="NXP", filename="LPC800_v0.3.xml", is_local=False)
 
     def resetStopOnReset(self, software_reset=None, map_to_user=True):
-        CortexM.resetStopOnReset(self, software_reset)
+        super(LPC800, self).resetStopOnReset(software_reset)
 
         # Remap to use flash and set SP and SP accordingly
         if map_to_user:

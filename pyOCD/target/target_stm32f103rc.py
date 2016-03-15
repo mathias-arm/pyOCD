@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
@@ -37,7 +36,7 @@ class STM32F103RC(CoreSightTarget):
 
     def init(self):
         logging.debug('stm32f103rc init')
-        CortexM.init(self)
+        super(STM32F103RC, self).init()
         self.writeMemory(DBGMCU_CR, DBGMCU_VAL);
 
 

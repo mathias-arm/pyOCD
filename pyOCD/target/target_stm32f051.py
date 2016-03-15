@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
@@ -52,7 +51,7 @@ class STM32F051(CoreSightTarget):
 
     def init(self):
         logging.debug('stm32f051 init')
-        CortexM.init(self)
+        super(STM32F051, self).init()
         enclock = self.readMemory(RCC_APB2ENR_CR)
         enclock |= RCC_APB2ENR_DBGMCU
         self.writeMemory(RCC_APB2ENR_CR, enclock);

@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
@@ -34,13 +33,10 @@ class LPC4330(CoreSightTarget):
         self.ignoreReset = False
         self._svd_location = SVDFile(vendor="NXP", filename="LPC43xx_svd_v5.xml", is_local=False)
 
-    def setFlash(self, flash):
-        self.flash = flash
-
     def reset(self, software_reset=False):
         # Always use software reset for LPC4330 since the hardware version
         # will reset the DAP.
-        CortexM.reset(self, True)
+        super(LPC4330, self).reset(True)
 
     def resetStopOnReset(self, software_reset=False):
         if self.ignoreReset:
@@ -56,7 +52,7 @@ class LPC4330(CoreSightTarget):
 
         # Always use software reset for LPC4330 since the hardware version
         # will reset the DAP.
-        CortexM.resetStopOnReset(self, True)
+        super(LPC4330, self).resetStopOnReset(True)
 
         # Map shadow memory to SPIFI FLASH
         self.writeMemory(0x40043100, 0x80000000)

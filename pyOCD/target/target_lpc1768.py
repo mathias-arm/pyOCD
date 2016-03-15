@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import CoreSightTarget
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 
@@ -32,10 +31,10 @@ class LPC1768(CoreSightTarget):
         super(LPC1768, self).__init__(link, self.memoryMap)
 
     def reset(self, software_reset=False):
-        CortexM.reset(self, False)
+        super(LPC1768, self).reset(False)
 
     def resetStopOnReset(self, software_reset=False, map_to_user=True):
-        CortexM.resetStopOnReset(self)
+        super(LPC1768, self).resetStopOnReset()
 
         # Remap to use flash and set SP and SP accordingly
         if map_to_user:

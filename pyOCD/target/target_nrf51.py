@@ -15,7 +15,6 @@
  limitations under the License.
 """
 
-from ..coresight.cortex_m import CortexM
 from .coresight_target import (SVDFile, CoreSightTarget)
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
@@ -45,4 +44,4 @@ class NRF51(CoreSightTarget):
         self.writeMemory(RESET, RESET_ENABLE)
         #reset
         logging.debug("target_nrf51.reset: trigger nRST pin")
-        CortexM.reset(self)
+        self.reset()

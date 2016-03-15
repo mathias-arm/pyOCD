@@ -43,4 +43,4 @@ class NRF52(CoreSightTarget):
         self.writeMemory(RESET, RESET_ENABLE)
         #reset
         logging.debug("target_nrf52.reset: trigger nRST pin")
-        CortexM.reset(self)
+        self.reset()

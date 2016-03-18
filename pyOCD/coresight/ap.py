@@ -156,10 +156,10 @@ class MEM_AP(AccessPort):
             return readMemCb
 
     # write aligned word ("data" are words)
-    def writeBlock32(self, addr, data):
+    def _writeBlock32(self, addr, data):
         num = self.dp.next_access_number
         if LOG_DAP:
-            self.logger.info("writeBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, len(data))
+            self.logger.info("_writeBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, len(data))
         # put address in TAR
         self.write_reg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
         self.write_reg(AP_REG['TAR'], addr)
@@ -170,13 +170,13 @@ class MEM_AP(AccessPort):
             self._handle_error(error, num)
             raise
         if LOG_DAP:
-            self.logger.info("writeBlock32:%06d }", num)
+            self.logger.info("_writeBlock32:%06d }", num)
 
     # read aligned word (the size is in words)
-    def readBlock32(self, addr, size):
+    def _readBlock32(self, addr, size):
         num = self.dp.next_access_number
         if LOG_DAP:
-            self.logger.info("readBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, size)
+            self.logger.info("_readBlock32:%06d (addr=0x%08x, size=%d) {", num, addr, size)
         # put address in TAR
         self.write_reg(AP_REG['CSW'], CSW_VALUE | CSW_SIZE32)
         self.write_reg(AP_REG['TAR'], addr)
@@ -187,7 +187,7 @@ class MEM_AP(AccessPort):
             self._handle_error(error, num)
             raise
         if LOG_DAP:
-            self.logger.info("readBlock32:%06d }", num)
+            self.logger.info("_readBlock32:%06d }", num)
         return resp
 
     ## @brief Shorthand to write a 32-bit word.
@@ -306,7 +306,7 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            self.writeBlock32(addr, data[:n/4])
+            self._writeBlock32(addr, data[:n/4])
             data = data[n/4:]
             size -= n/4
             addr += n
@@ -321,7 +321,7 @@ class MEM_AP(AccessPort):
             n = self.auto_increment_page_size - (addr & (self.auto_increment_page_size - 1))
             if size*4 < n:
                 n = (size*4) & 0xfffffffc
-            resp += self.readBlock32(addr, n/4)
+            resp += self._readBlock32(addr, n/4)
             size -= n/4
             addr += n
         return resp

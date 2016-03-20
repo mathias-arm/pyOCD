@@ -74,6 +74,7 @@ class CoreSightTarget(Target):
         self.aps[ap.ap_num] = ap
 
     def add_core(self, core):
+        core.setFlash(self.flash)
         self.cores[core.core_number] = core
         self.cores[core.core_number].setTargetContext(CachingDebugContext(DebugContext(core)))
         self._root_contexts[core.core_number] = None

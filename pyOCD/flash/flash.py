@@ -63,13 +63,21 @@ class PageInfo(object):
         self.erase_weight = None        # Time it takes to erase a page
         self.program_weight = None      # Time it takes to program a page (Not including data transfer time)
         self.size = None                # Size of page
-        self.crc_supported = None       # Is the function computeCrcs supported?
+
+    def __repr__(self):
+        return "<PageInfo@0x%x base=0x%x size=0x%x erswt=%g prgwt=%g>" \
+            % (id(self), self.base_addr, self.size, self.erase_weight, self.program_weight)
 
 class FlashInfo(object):
 
     def __init__(self):
         self.rom_start = None           # Starting address of ROM
         self.erase_weight = None        # Time it takes to perform a chip erase
+        self.crc_supported = None       # Is the function computeCrcs supported?
+
+    def __repr__(self):
+        return "<FlashInfo@0x%x start=0x%x erswt=%g crc=%s>" \
+            % (id(self), self.rom_start, self._erase_weight, self.crc_supported)
 
 class Flash(object):
     """
@@ -81,6 +89,7 @@ class Flash(object):
         self.flash_algo = flash_algo
         self.flash_algo_debug = False
         if flash_algo is not None:
+            self.use_analyzer = flash_algo['analyzer_supported']
             self.end_flash_algo = flash_algo['load_address'] + len(flash_algo) * 4
             self.begin_stack = flash_algo['begin_stack']
             self.begin_data = flash_algo['begin_data']
@@ -105,12 +114,13 @@ class Flash(object):
     def minimumProgramLength(self):
         return self.min_program_length
 
-    def init(self):
+    def init(self, reset=True):
         """
         Download the flash algorithm in RAM
         """
         self.target.halt()
-        self.target.setTargetState("PROGRAM")
+        if reset:
+            self.target.setTargetState("PROGRAM")
 
         # update core register to execute the init subroutine
         result = self.callFunctionAndWait(self.flash_algo['pc_init'], init=True)
@@ -118,6 +128,9 @@ class Flash(object):
         # check the return code
         if result != 0:
             logging.error('init error: %i', result)
+
+    def cleanup(self):
+        pass
 
     def computeCrcs(self, sectors):
         data = []
@@ -273,7 +286,7 @@ class Flash(object):
         info = FlashInfo()
         info.rom_start = boot_region.start if boot_region else 0
         info.erase_weight = DEFAULT_CHIP_ERASE_WEIGHT
-        info.crc_supported = self.flash_algo['analyzer_supported']
+        info.crc_supported = self.use_analyzer
         return info
 
     def getFlashBuilder(self):
@@ -315,7 +328,7 @@ class Flash(object):
         if init:
             # download flash algo in RAM
             self.target.writeBlockMemoryAligned32(self.flash_algo['load_address'], self.flash_algo['instructions'])
-            if self.flash_algo['analyzer_supported']:
+            if self.use_analyzer:
                 self.target.writeBlockMemoryAligned32(self.flash_algo['analyzer_address'], analyzer)
 
         reg_list.append('pc')
@@ -351,20 +364,18 @@ class Flash(object):
             pass
 
         if self.flash_algo_debug:
-            analyzer_supported = self.flash_algo['analyzer_supported']
-
             expected_fp = self.flash_algo['static_base']
             expected_sp = self.flash_algo['begin_stack']
             expected_pc = self.flash_algo['load_address']
             expected_flash_algo = self.flash_algo['instructions']
-            if analyzer_supported:
+            if self.use_analyzer:
                 expected_analyzer = analyzer
             final_fp = self.target.readCoreRegister('r9')
             final_sp = self.target.readCoreRegister('sp')
             final_pc = self.target.readCoreRegister('pc')
             #TODO - uncomment if Read/write and zero init sections can be moved into a separate flash algo section
             #final_flash_algo = self.target.readBlockMemoryAligned32(self.flash_algo['load_address'], len(self.flash_algo['instructions']))
-            #if analyzer_supported:
+            #if self.use_analyzer:
             #    final_analyzer = self.target.readBlockMemoryAligned32(self.flash_algo['analyzer_address'], len(analyzer))
 
             error = False
@@ -384,7 +395,7 @@ class Flash(object):
             #if not _same(expected_flash_algo, final_flash_algo):
             #    logging.error("Flash algorithm overwritten!")
             #    error = True
-            #if analyzer_supported and not _same(expected_analyzer, final_analyzer):
+            #if self.use_analyzer and not _same(expected_analyzer, final_analyzer):
             #    logging.error("Analyzer overwritten!")
             #    error = True
             assert error == False

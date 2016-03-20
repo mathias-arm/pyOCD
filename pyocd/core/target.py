@@ -48,7 +48,8 @@ class Target(MemoryInterface, Notifier):
     # address and available breakpoints.
     BREAKPOINT_HW = 1
     BREAKPOINT_SW = 2
-    BREAKPOINT_AUTO = 3
+    BREAKPOINT_FLASH = 3
+    BREAKPOINT_AUTO = 4
 
     WATCHPOINT_READ = 1
     WATCHPOINT_WRITE = 2

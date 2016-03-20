@@ -23,6 +23,7 @@ from .fpb import FPB
 from .dwt import DWT
 from ..debug.breakpoints.manager import BreakpointManager
 from ..debug.breakpoints.software import SoftwareBreakpointProvider
+from ..debug.breakpoints.flash import FlashBreakpointProvider
 import logging
 from time import (time, sleep)
 from xml.etree.ElementTree import (Element, SubElement, tostring)
@@ -488,6 +489,11 @@ class CortexM(Target, CoreSightComponent):
             self.sw_bp.init()
 
         self.call_delegate('did_start_debug_core', core=self)
+
+    def enable_flash_breakpoints(self, flash):
+        flash_bp = FlashBreakpointProvider(self)
+        flash_bp.init()
+        self.bp_manager.add_provider(flash_bp, Target.BREAKPOINT_FLASH)
 
     def disconnect(self, resume=True):
         if not self.call_delegate('will_stop_debug_core', core=self):

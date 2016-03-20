@@ -364,12 +364,16 @@ class Flash(object):
             pass
 
         if self.flash_algo_debug:
+            regs = self.target.readCoreRegistersRaw(range(19) + [20])
+            logging.debug("Registers after flash algo: [%s]", " ".join("%08x" % r for r in regs))
+
             expected_fp = self.flash_algo['static_base']
             expected_sp = self.flash_algo['begin_stack']
             expected_pc = self.flash_algo['load_address']
             expected_flash_algo = self.flash_algo['instructions']
             if self.use_analyzer:
                 expected_analyzer = analyzer
+            final_ipsr = self.target.readCoreRegister('xpsr') & 0xff
             final_fp = self.target.readCoreRegister('r9')
             final_sp = self.target.readCoreRegister('sp')
             final_pc = self.target.readCoreRegister('pc')
@@ -379,6 +383,9 @@ class Flash(object):
             #    final_analyzer = self.target.readBlockMemoryAligned32(self.flash_algo['analyzer_address'], len(analyzer))
 
             error = False
+            if final_ipsr != 0:
+                logging.error("IPSR should be 0 but is 0x%02x", final_ipsr)
+                error = True
             if final_fp != expected_fp:
                 # Frame pointer should not change
                 logging.error("Frame pointer should be 0x%x but is 0x%x" % (expected_fp, final_fp))

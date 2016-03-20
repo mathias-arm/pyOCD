@@ -29,12 +29,15 @@ class BreakpointManager(object):
         self._breakpoints = {}
         self._core = core
         self._fpb = None
+        self._flash_bp = None
         self._providers = {}
 
     def add_provider(self, provider, type):
         self._providers[type] = provider
         if type == Target.BREAKPOINT_HW:
             self._fpb = provider
+        elif type == Target.BREAKPOINT_FLASH:
+            self._flash_bp = provider
 
     def find_breakpoint(self, addr):
         return self._breakpoints.get(addr, None)
@@ -83,9 +86,13 @@ class BreakpointManager(object):
             #  1. Addresses outside the supported FPBv1 range of 0-0x1fffffff
             #  2. RAM regions by default.
             #  3. Number of remaining hw breaks are at or less than the minimum we want to keep.
+            # Use flash bp for:
+            #  1. is flash region and no hw bp available
             #
             # Otherwise use hw.
-            if not in_hw_bkpt_range or is_ram or fbp_below_min:
+            if is_flash and fbp_below_min:
+                type = Target.BREAKPOINT_FLASH
+            elif not in_hw_bkpt_range or is_ram or fbp_below_min:
                 type = Target.BREAKPOINT_SW
             else:
                 type = Target.BREAKPOINT_HW
@@ -97,6 +104,9 @@ class BreakpointManager(object):
             if is_ram:
                 logging.debug("using sw bp instead because of unsupported addr")
                 type = Target.BREAKPOINT_SW
+            elif is_flash and self._flash_bp:
+                logging.debug("using flash bp instead because of unsupported addr")
+                type = Target.BREAKPOINT_FLASH
             else:
                 logging.debug("could not fallback to software breakpoint")
                 return False
@@ -106,6 +116,9 @@ class BreakpointManager(object):
             if in_hw_bkpt_range and fbp_available:
                 logging.debug("using hw bp instead because addr is flash")
                 type = Target.BREAKPOINT_HW
+            elif self._flash_bp:
+                logging.debug("using flash bp instead because of no hw bps")
+                type = Target.BREAKPOINT_FLASH
             else:
                 logging.debug("could not fallback to hardware breakpoint")
                 return False

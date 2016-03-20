@@ -25,6 +25,7 @@ from .fpb import FPB
 from .dwt import DWT
 from ..debug.breakpoints.manager import BreakpointManager
 from ..debug.breakpoints.software import SoftwareBreakpointProvider
+from ..debug.breakpoints.flash import FlashBreakpointProvider
 import logging
 from time import (time, sleep)
 
@@ -347,6 +348,13 @@ class CortexM(Target, CoreSightComponent):
         self.checkForFPU()
         self.buildTargetXML()
         self.sw_bp.init()
+
+    def setFlash(self, flash):
+        self.flash = flash
+        if self.flash:
+            self.flash_bp = FlashBreakpointProvider(self)
+            self.flash_bp.init()
+            self.bp_manager.add_provider(self.flash_bp, Target.BREAKPOINT_FLASH)
 
     def disconnect(self, resume=True):
         # Remove breakpoints.

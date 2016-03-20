@@ -100,6 +100,7 @@ class CoreSightTarget(Target):
             self._svd_load_thread.load()
 
     def add_core(self, core):
+        core.setFlash(self.flash)
         core.setHaltOnConnect(self.halt_on_connect)
         core.setTargetContext(CachingDebugContext(DebugContext(core)))
         self.cores[core.core_number] = core

@@ -275,7 +275,7 @@ class PyOCDConsole(object):
                 return
 
             # Handle register name as command.
-            if cmd in pyOCD.target.cortex_m.CORE_REGISTER:
+            if cmd in pyOCD.coresight.cortex_m.CORE_REGISTER:
                 self.tool.handle_reg([cmd])
                 return
 
@@ -484,7 +484,7 @@ class PyOCDTool(object):
         print "Cores:        %d" % len(self.target.cores)
         for i, c in enumerate(self.target.cores):
             core = self.target.cores[c]
-            print "Core %d type:  %s" % (i, pyOCD.target.cortex_m.CORE_TYPE_NAME[core.core_type])
+            print "Core %d type:  %s" % (i, pyOCD.coresight.cortex_m.CORE_TYPE_NAME[core.core_type])
 
     def handle_status(self, args):
         if self.target.isLocked():
@@ -511,7 +511,7 @@ class PyOCDTool(object):
             show_fields = False
 
         reg = args[0].lower()
-        if reg in pyOCD.target.cortex_m.CORE_REGISTER:
+        if reg in pyOCD.coresight.cortex_m.CORE_REGISTER:
             value = self.target.readCoreRegister(reg)
             if type(value) is int:
                 print "%s = 0x%08x (%d)" % (reg, value, value)
@@ -789,7 +789,7 @@ class PyOCDTool(object):
                 arg = arg.strip()
                 offset = int(offset.strip(), base=0)
 
-        if arg in pyOCD.target.cortex_m.CORE_REGISTER:
+        if arg in pyOCD.coresight.cortex_m.CORE_REGISTER:
             value = self.target.readCoreRegister(arg)
             print "%s = 0x%08x" % (arg, value)
         else:

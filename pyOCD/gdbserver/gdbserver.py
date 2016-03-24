@@ -230,7 +230,7 @@ class GDBServer(threading.Thread):
     It implements the RSP (Remote Serial Protocol).
     """
     def __init__(self, board, port_urlWSS, options={}):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, name="gdb-server-thread")
         self.board = board
         self.target = board.target
         self.flash = board.flash
@@ -736,7 +736,11 @@ class GDBServer(threading.Thread):
                                 core.resume()
                                 continue
 
-                        logging.debug("core #%d state halted" % core.core_number)
+                        logging.debug("core #%d state halted", core.core_number)
+                        for otherCore in self.visible_cores.itervalues():
+                            if core.core_number != otherCore.core_number:
+                                logging.debug("halting core #%d", otherCore.core_number)
+                                otherCore.halt()
                         val = self.getTResponse(core=core)
                         exit_resume = True
                         break
@@ -824,7 +828,7 @@ class GDBServer(threading.Thread):
             return self.createRSPPacket("OK")
 
         default_action = None
-        thread_actions = { } # our only thread
+        thread_actions = { }
         for core in self.visible_cores.itervalues():
             thread_actions[core.core_number + 1] = None
 
@@ -834,8 +838,10 @@ class GDBServer(threading.Thread):
             if len(args) > 1:
                 process_id, thread_id = split_thread_id(args[1])
                 if thread_id == -1:
+                    # Set all threads that don't yet have an action.
                     for k in thread_actions.keys():
-                        thread_actions[k] = action
+                        if thread_actions[k] is None:
+                            thread_actions[k] = action
                     break
                 elif thread_id == 0:
                     thread_id = 1
@@ -1327,5 +1333,7 @@ class GDBServer(threading.Thread):
                 Target.TARGET_LOCKUP : "Lockup",
                 }
             t.text = CORE_STATUS_DESC[state]
-        return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+        result = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
+        logging.debug(result)
+        return result
 

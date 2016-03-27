@@ -96,9 +96,9 @@ class ArgonThreadContext(DebugContext):
         reg_vals = []
 
         inException = self._get_ipsr() > 0
-        isCurrent = self._is_current()
+        isCurrent = self._thread.is_current
 
-        sp = self._get_stack_pointer()
+        sp = self.thread.get_stack_pointer()
         saveSp = sp
         if not isCurrent:
             sp -= 0x40
@@ -109,7 +109,7 @@ class ArgonThreadContext(DebugContext):
             if isCurrent:
                 if not inException:
                     # Not in an exception, so just read the live register.
-                    reg_vals.append(self._core.readCoreRegisterRaw(reg))
+                    reg_vals.append(self._parent.readCoreRegisterRaw(reg))
                     continue
                 else:
                     # Check for regs we can't access.
@@ -124,43 +124,23 @@ class ArgonThreadContext(DebugContext):
 
             spOffset = self.CORE_REGISTER_OFFSETS.get(reg, None)
             if spOffset is None:
-                reg_vals.append(self._core.readCoreRegisterRaw(reg))
+                reg_vals.append(self._parent.readCoreRegisterRaw(reg))
                 continue
             if isCurrent and inException:
                 spOffset -= 0x20
 
             try:
-                reg_vals.append(self._core.read32(sp + spOffset))
+                reg_vals.append(self._parent.read32(sp + spOffset))
             except DAPAccess.TransferError:
                 reg_vals.append(0)
 
         return reg_vals
 
-    def _get_stack_pointer(self):
-        sp = 0
-        if self._is_current():
-            # Read live process stack.
-            sp = self._core.readCoreRegister('sp')
-
-            # In IRQ context, we have to adjust for hw saved state.
-            if self._get_ipsr() > 0:
-                sp += 0x20
-        else:
-            # Get stack pointer saved in thread struct.
-            sp = self._core.read32(self._thread._base + THREAD_STACK_POINTER_OFFSET)
-
-            # Skip saved thread state.
-            sp += 0x40
-        return sp
-
     def _get_ipsr(self):
-        return self._core.readCoreRegister('xpsr') & 0xff
+        return self._parent.readCoreRegister('xpsr') & 0xff
 
     def _has_extended_frame(self):
         return False
-
-    def _is_current(self):
-        return self._thread.is_current
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
         self._core.writeCoreRegistersRaw(reg_list, data_list)
@@ -176,6 +156,23 @@ class ArgonThread(TargetThread):
 
         ptr = self._target_context.read32(self._base + THREAD_NAME_OFFSET)
         self._name = read_c_string(self._target_context, ptr)
+
+    def get_stack_pointer(self):
+        sp = 0
+        if self._is_current():
+            # Read live process stack.
+            sp = self._target_context.readCoreRegister('sp')
+
+            # In IRQ context, we have to adjust for hw saved state.
+            if self.provider.get_ipsr() > 0:
+                sp += 0x20
+        else:
+            # Get stack pointer saved in thread struct.
+            sp = self._target_context.read32(self._base + THREAD_STACK_POINTER_OFFSET)
+
+            # Skip saved thread state.
+            sp += 0x40
+        return sp
 
     @property
     def unique_id(self):
@@ -210,8 +207,7 @@ class ArgonThreadProvider(ThreadProvider):
         self._target_context = self._target.getTargetContext()
         self.g_ar = None
         self._all_threads = None
-        self._threads = []
-        self._threads_dict = {}
+        self._threads = {}
 
     def init(self, symbolProvider):
         self.g_ar = symbolProvider.get_symbol_value("g_ar")
@@ -225,28 +221,31 @@ class ArgonThreadProvider(ThreadProvider):
 
     def _build_thread_list(self):
         allThreads = TargetList(self._target_context, self._all_threads)
-        self._threads = []
-        self._threads_dict = {}
+        newThreads = {}
         for threadBase in allThreads:
             try:
-                t = ArgonThread(self._target_context, self, threadBase)
+                # Reuse existing thread objects if possible.
+                if threadBase in self._threads:
+                    t = self._threads[threadBase]
+                else:
+                    t = ArgonThread(self._target_context, self, threadBase)
                 log.debug("Thread 0x%08x (%s)", threadBase, t.name)
-                self._threads.append(t)
-                self._threads_dict[t.unique_id] = t
+                self._threads[t.unique_id] = t
             except DAPAccess.TransferError:
                 log.debug("TransferError while examining thread 0x%08x", threadBase)
+        self._threads = newThreads
 
     def get_threads(self):
         if not self.is_enabled:
             return []
         self.update_threads()
-        return self._threads
+        return self._threads.values()
 
     def get_thread(self, threadId):
         if not self.is_enabled:
             return None
         self.update_threads()
-        return self._threads_dict.get(threadId, None)
+        return self._threads.get(threadId, None)
 
     @property
     def is_enabled(self):
@@ -259,7 +258,7 @@ class ArgonThreadProvider(ThreadProvider):
         self.update_threads()
         id = self.get_current_thread_id()
         try:
-            return self._threads_dict[id]
+            return self._threads[id]
         except KeyError:
             return None
 
@@ -267,7 +266,7 @@ class ArgonThreadProvider(ThreadProvider):
         if not self.is_enabled:
             return False
         self.update_threads()
-        return threadId in self._threads_dict
+        return threadId in self._threads
 
     def get_current_thread_id(self):
         if not self.is_enabled:

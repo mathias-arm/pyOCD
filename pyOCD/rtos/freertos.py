@@ -131,23 +131,23 @@ class FreeRTOSThreadContext(DebugContext):
 
             spOffset = self.CORE_REGISTER_OFFSETS.get(reg, None)
             if spOffset is None:
-                reg_vals.append(self._core.readCoreRegisterRaw(reg))
+                reg_vals.append(self._parent.readCoreRegisterRaw(reg))
                 continue
             if isCurrent and inException:
                 spOffset -= 0x20
 
             try:
-                reg_vals.append(self._core.read32(sp + spOffset))
+                reg_vals.append(self._parent.read32(sp + spOffset))
             except DAPAccess.TransferError:
                 reg_vals.append(0)
 
         return reg_vals
 
     def _get_ipsr(self):
-        return self._core.readCoreRegister('xpsr') & 0xff
+        return self._parent.readCoreRegister('xpsr') & 0xff
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
-        self._core.writeCoreRegistersRaw(reg_list, data_list)
+        self._parent.writeCoreRegistersRaw(reg_list, data_list)
 
 ## @brief A FreeRTOS task.
 class FreeRTOSThread(TargetThread):
@@ -286,8 +286,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
         self._target_context = self._target.getTargetContext()
         self._symbols = None
         self._total_priorities = 0
-        self._threads = []
-        self._threads_dict = {}
+        self._threads = {}
 
     def init(self, symbolProvider):
         # Lookup required symbols.
@@ -328,8 +327,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
         return True
 
     def _build_thread_list(self):
-        self._threads = []
-        self._threads_dict = {}
+        newThreads = {}
 
         # Read the number of threads.
         threadCount = self._target_context.read32(self._symbols['uxCurrentNumberOfTasks'])
@@ -351,7 +349,6 @@ class FreeRTOSThreadProvider(ThreadProvider):
         # uxTopReadyPriority as a bitmap instead of integer. This is ok because uxTopReadyPriority
         # in optimised mode will always be >= the actual top priority.
         if topPriority > self._total_priorities:
-#             log.warning("FreeRTOS: top ready priority (%d) is greater than the total number of priorities (%d)", topPriority, self._total_priorities)
             topPriority = self._total_priorities
 
         # Build up list of all the thread lists we need to scan.
@@ -371,41 +368,48 @@ class FreeRTOSThreadProvider(ThreadProvider):
             for threadBase in TargetList(self._target_context, listPtr):
                 try:
                     # Don't try adding more threads than the number of threads that FreeRTOS says there are.
-                    if len(self._threads) >= threadCount:
+                    if len(newThreads) >= threadCount:
                         break
 
-                    t = FreeRTOSThread(self._target_context, self, threadBase)
+                    # Reuse existing thread objects.
+                    if threadBase in self._threads:
+                        t = self._threads[threadBase]
+                    else:
+                        t = FreeRTOSThread(self._target_context, self, threadBase)
+
+                    # Set thread state.
                     if threadBase == currentThread:
                         t.state = FreeRTOSThread.RUNNING
                     else:
                         t.state = state
+
                     log.debug("Thread 0x%08x (%s)", threadBase, t.name)
-                    self._threads.append(t)
-                    self._threads_dict[t.unique_id] = t
+                    newThreads[t.unique_id] = t
                 except DAPAccess.TransferError:
                     log.debug("TransferError while examining thread 0x%08x", threadBase)
 
-        if len(self._threads) != threadCount:
+        if len(newThreads) != threadCount:
             log.warning("FreeRTOS: thread count mismatch")
 
         # Create fake handler mode thread.
         if self.get_ipsr() > 0:
             log.debug("FreeRTOS: creating handler mode thread")
             t = HandlerModeThread(self._target_context, self)
-            self._threads.append(t)
-            self._threads_dict[t.unique_id] = t
+            newThreads[t.unique_id] = t
+
+        self._threads = newThreads
 
     def get_threads(self):
         if not self.is_enabled:
             return []
         self.update_threads()
-        return self._threads
+        return self._threads.values()
 
     def get_thread(self, threadId):
         if not self.is_enabled:
             return None
         self.update_threads()
-        return self._threads_dict.get(threadId, None)
+        return self._threads.get(threadId, None)
 
     @property
     def is_enabled(self):
@@ -418,7 +422,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
         self.update_threads()
         id = self.get_current_thread_id()
         try:
-            return self._threads_dict[id]
+            return self._threads[id]
         except KeyError:
             return None
 
@@ -426,7 +430,7 @@ class FreeRTOSThreadProvider(ThreadProvider):
         if not self.is_enabled:
             return False
         self.update_threads()
-        return threadId in self._threads_dict
+        return threadId in self._threads
 
     def get_current_thread_id(self):
         if not self.is_enabled:

@@ -38,6 +38,9 @@ THREAD_CREATED_NODE_OFFSET = 36
 LIST_NODE_NEXT_OFFSET = 0
 LIST_NODE_OBJ_OFFSET= 8
 
+# Create a logger for this module.
+log = logging.getLogger("argon")
+
 class TargetList(object):
     def __init__(self, context, ptr):
         self._context = context
@@ -58,8 +61,8 @@ class TargetList(object):
                 next = self._context.read32(node + LIST_NODE_NEXT_OFFSET)
                 node = next
             except DAPAccess.TransferError:
-                logging.debug("TransferError while reading list elements (node=0x%08x)", node)
-                break
+                log.warning("TransferError while reading list elements (list=0x%08x, node=0x%08x), terminating list", self._list, node)
+                is_valid = False
 
 ## @brief
 class ArgonThreadContext(DebugContext):
@@ -214,7 +217,7 @@ class ArgonThreadProvider(ThreadProvider):
         self.g_ar = symbolProvider.get_symbol_value("g_ar")
         if self.g_ar is None:
             return False
-        logging.debug("Argon: g_ar = 0x%08x", self.g_ar)
+        log.debug("Argon: g_ar = 0x%08x", self.g_ar)
 
         self._all_threads = self.g_ar + ALL_OBJECTS_OFFSET + ALL_OBJECTS_THREADS_OFFSET
 
@@ -227,11 +230,11 @@ class ArgonThreadProvider(ThreadProvider):
         for threadBase in allThreads:
             try:
                 t = ArgonThread(self._target_context, self, threadBase)
-                logging.debug("Thread 0x%08x (%s)", threadBase, t.name)
+                log.debug("Thread 0x%08x (%s)", threadBase, t.name)
                 self._threads.append(t)
                 self._threads_dict[t.unique_id] = t
             except DAPAccess.TransferError:
-                logging.debug("TransferError while examining thread 0x%08x", threadBase)
+                log.debug("TransferError while examining thread 0x%08x", threadBase)
 
     def get_threads(self):
         if not self.is_enabled:
@@ -278,7 +281,7 @@ class ArgonThreadProvider(ThreadProvider):
         if self.g_ar is None:
             return False
         flag = self._target_context.read8(self.g_ar + IS_RUNNING_OFFSET)
-        logging.debug("g_ar.isRunning@0x%08x = %d", self.g_ar + IS_RUNNING_OFFSET, flag)
+        log.debug("g_ar.isRunning@0x%08x = %d", self.g_ar + IS_RUNNING_OFFSET, flag)
         return flag != 0
 
 

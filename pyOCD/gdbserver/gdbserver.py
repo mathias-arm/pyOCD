@@ -1245,6 +1245,7 @@ class GDBServer(threading.Thread):
         return '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "threads.dtd">' + tostring(root)
 
     def is_threading_enabled(self):
-        return (self.thread_provider is not None) and self.thread_provider.is_enabled
+        return (self.thread_provider is not None) and self.thread_provider.is_enabled \
+            and (self.thread_provider.current_thread is not None)
 
 

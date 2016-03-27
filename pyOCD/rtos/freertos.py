@@ -33,6 +33,9 @@ THREAD_STACK_POINTER_OFFSET = 0
 THREAD_PRIORITY_OFFSET = 44
 THREAD_NAME_OFFSET = 52
 
+# Create a logger for this module.
+log = logging.getLogger("freertos")
+
 class TargetList(object):
     def __init__(self, context, ptr):
         self._context = context
@@ -58,8 +61,8 @@ class TargetList(object):
                 prev = node
                 node = self._context.read32(node + LIST_NODE_NEXT_OFFSET)
             except DAPAccess.TransferError:
-                logging.debug("TransferError while reading list elements (node=0x%08x)", node)
-                break
+                log.warning("TransferError while reading list elements (list=0x%08x, node=0x%08x), terminating list", self._list, node)
+                node = 0
 
 ## @brief
 class FreeRTOSThreadContext(DebugContext):
@@ -114,7 +117,7 @@ class FreeRTOSThreadContext(DebugContext):
                     reg_vals.append(0)
                     continue
                 if reg == 18 or reg == 13: # PSP
-                    logging.debug("FreeRTOS: psp = 0x%08x", saveSp)# + 0x20)
+                    log.debug("FreeRTOS: psp = 0x%08x", saveSp)# + 0x20)
                     reg_vals.append(saveSp)# + 0x20)
                     continue
 #                 else:
@@ -266,6 +269,7 @@ class HandlerModeThread(TargetThread):
 ## @brief Base class for RTOS support plugins.
 class FreeRTOSThreadProvider(ThreadProvider):
 
+    ## Required FreeRTOS symbols.
     FREERTOS_SYMBOLS = [
         "uxCurrentNumberOfTasks",
         "pxCurrentTCB",
@@ -273,8 +277,6 @@ class FreeRTOSThreadProvider(ThreadProvider):
         "xDelayedTaskList1",
         "xDelayedTaskList2",
         "xPendingReadyList",
-        "xSuspendedTaskList",
-        "xTasksWaitingTermination",
         "uxTopReadyPriority",
         "xSchedulerRunning",
         ]
@@ -288,25 +290,40 @@ class FreeRTOSThreadProvider(ThreadProvider):
         self._threads_dict = {}
 
     def init(self, symbolProvider):
+        # Lookup required symbols.
         self._symbols = self._lookup_symbols(self.FREERTOS_SYMBOLS, symbolProvider)
         if self._symbols is None:
             return False
 
-        # Check for the expected list size.
+        # Look up optional xSuspendedTaskList, controlled by INCLUDE_vTaskSuspend
+        suspendedTaskListSym = self._lookup_symbols(["xSuspendedTaskList"], symbolProvider)
+        if suspendedTaskListSym is not None:
+            self._symbols['xSuspendedTaskList'] = suspendedTaskListSym['xSuspendedTaskList']
+
+        # Look up optional xTasksWaitingTermination, controlled by INCLUDE_vTaskDelete
+        tasksWaitingTerminationSym = self._lookup_symbols(["xTasksWaitingTermination"], symbolProvider)
+        if tasksWaitingTerminationSym is not None:
+            self._symbols['xTasksWaitingTermination'] = tasksWaitingTerminationSym['xTasksWaitingTermination']
+
+        # Check for the expected list size. These two symbols are each a single list and xDelayedTaskList2
+        # immediately follows xDelayedTaskList1, so we can just subtract their addresses to get the
+        # size of a single list.
         delta = self._symbols['xDelayedTaskList2'] - self._symbols['xDelayedTaskList1']
         if delta != LIST_SIZE:
-            logging.warning("FreeRTOS: list size is unexpected")
+            log.warning("FreeRTOS: list size is unexpected, maybe an unsupported configuration of FreeRTOS")
             return False
 
+        # xDelayedTaskList1 immediately follows pxReadyTasksLists, so subtracting their addresses gives
+        # us the total size of the pxReadyTaskLists array.
         delta = self._symbols['xDelayedTaskList1'] - self._symbols['pxReadyTasksLists']
         if delta % LIST_SIZE:
-            logging.warning("FreeRTOS: pxReadyTasksLists size is unexpected, maybe an unsupported version of FreeRTOS")
+            log.warning("FreeRTOS: pxReadyTasksLists size is unexpected, maybe an unsupported version of FreeRTOS")
             return False
         self._total_priorities = delta // LIST_SIZE
         if self._total_priorities > FREERTOS_MAX_PRIORITIES:
-            logging.warning("FreeRTOS: number of priorities is too large (%d)", self._total_priorities)
+            log.warning("FreeRTOS: number of priorities is too large (%d)", self._total_priorities)
             return False
-        logging.debug("FreeRTOS: number of priorities is %d", self._total_priorities)
+        log.debug("FreeRTOS: number of priorities is %d", self._total_priorities)
 
         return True
 
@@ -320,15 +337,22 @@ class FreeRTOSThreadProvider(ThreadProvider):
         # Read the current thread.
         currentThread = self._target_context.read32(self._symbols['pxCurrentTCB'])
 
+        # We should only be building the thread list if the scheduler is running, so a zero thread
+        # count or a null current thread means something is bizarrely wrong.
         if threadCount == 0 or currentThread == 0:
-            # TODO handle me
+            log.warning("FreeRTOS: no threads even though the scheduler is running")
             return
 
         # Read the top ready priority.
         topPriority = self._target_context.read32(self._symbols['uxTopReadyPriority'])
+
+        # Handle an uxTopReadyPriority value larger than the number of lists. This is most likely
+        # caused by the configUSE_PORT_OPTIMISED_TASK_SELECTION option being enabled, which treats
+        # uxTopReadyPriority as a bitmap instead of integer. This is ok because uxTopReadyPriority
+        # in optimised mode will always be >= the actual top priority.
         if topPriority > self._total_priorities:
-            logging.warning("FreeRTOS: top ready priority (%d) is greater than the total number of priorities (%d)", topPriority, self._total_priorities)
-            return
+#             log.warning("FreeRTOS: top ready priority (%d) is greater than the total number of priorities (%d)", topPriority, self._total_priorities)
+            topPriority = self._total_priorities
 
         # Build up list of all the thread lists we need to scan.
         listsToRead = []
@@ -338,30 +362,35 @@ class FreeRTOSThreadProvider(ThreadProvider):
         listsToRead.append((self._symbols['xDelayedTaskList1'], FreeRTOSThread.BLOCKED))
         listsToRead.append((self._symbols['xDelayedTaskList2'], FreeRTOSThread.BLOCKED))
         listsToRead.append((self._symbols['xPendingReadyList'], FreeRTOSThread.READY))
-        listsToRead.append((self._symbols['xSuspendedTaskList'], FreeRTOSThread.SUSPENDED))
-        listsToRead.append((self._symbols['xTasksWaitingTermination'], FreeRTOSThread.DELETED))
+        if self._symbols.has_key('xSuspendedTaskList'):
+            listsToRead.append((self._symbols['xSuspendedTaskList'], FreeRTOSThread.SUSPENDED))
+        if self._symbols.has_key('xTasksWaitingTermination'):
+            listsToRead.append((self._symbols['xTasksWaitingTermination'], FreeRTOSThread.DELETED))
 
         for listPtr, state in listsToRead:
-            allThreads = TargetList(self._target_context, listPtr)
-            for threadBase in allThreads:
+            for threadBase in TargetList(self._target_context, listPtr):
                 try:
+                    # Don't try adding more threads than the number of threads that FreeRTOS says there are.
+                    if len(self._threads) >= threadCount:
+                        break
+
                     t = FreeRTOSThread(self._target_context, self, threadBase)
                     if threadBase == currentThread:
                         t.state = FreeRTOSThread.RUNNING
                     else:
                         t.state = state
-                    logging.debug("Thread 0x%08x (%s)", threadBase, t.name)
+                    log.debug("Thread 0x%08x (%s)", threadBase, t.name)
                     self._threads.append(t)
                     self._threads_dict[t.unique_id] = t
                 except DAPAccess.TransferError:
-                    logging.debug("TransferError while examining thread 0x%08x", threadBase)
+                    log.debug("TransferError while examining thread 0x%08x", threadBase)
 
         if len(self._threads) != threadCount:
-            logging.warning("FreeRTOS: thread count mismatch")
+            log.warning("FreeRTOS: thread count mismatch")
 
         # Create fake handler mode thread.
         if self.get_ipsr() > 0:
-            logging.debug("FreeRTOS: creating handler mode thread")
+            log.debug("FreeRTOS: creating handler mode thread")
             t = HandlerModeThread(self._target_context, self)
             self._threads.append(t)
             self._threads_dict[t.unique_id] = t

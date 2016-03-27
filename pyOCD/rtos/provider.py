@@ -52,7 +52,7 @@ class ThreadProvider(object):
         syms = {}
         for name in symbolList:
             addr = symbolProvider.get_symbol_value(name)
-            logging.debug("Value for symbol %s = %s", name, repr(addr))
+            logging.debug("Value for symbol %s = %s", name, hex(addr) if addr is not None else "<none>")
             if addr is None:
                 return None
             syms[name] = addr

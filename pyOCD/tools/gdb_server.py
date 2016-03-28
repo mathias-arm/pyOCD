@@ -83,6 +83,7 @@ class GDBServerTool(object):
         parser.add_argument("-G", "--gdb-syscall", dest="semihost_use_syscalls", action="store_true", help="Use GDB syscalls for semihosting file I/O.")
         parser.add_argument("-c", "--command", dest="commands", metavar="CMD", action='append', nargs='+', help="Run command (OpenOCD compatibility).")
         parser.add_argument("-da", "--daparg", dest="daparg", nargs='+', help="Send setting to DAPAccess layer.")
+        parser.add_argument("--elf", metavar="PATH", help="Optionally specify ELF file being debugged.")
         return parser
 
     def get_chip_erase(self, args):
@@ -264,6 +265,9 @@ class GDBServerTool(object):
                     target_override=self.args.target_override,
                     frequency=self.args.frequency)
                 with board_selected as board:
+                    # Set ELF if provided.
+                    if self.args.elf:
+                        board.target.elf = self.args.elf
                     gdb = GDBServer(board, self.args.port_number, self.gdb_server_settings)
                     while gdb.isAlive():
                         gdb.join(timeout=0.5)

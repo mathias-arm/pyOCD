@@ -289,6 +289,7 @@ class CortexM(Target):
         self.core_number = core_num
         self._run_token = 0
         self._target_context = None
+        self._elf = None
 
         # Set up breakpoints manager.
         self.fpb = FPB(self.ap)
@@ -297,6 +298,14 @@ class CortexM(Target):
         self.bp_manager = BreakpointManager(self)
         self.bp_manager.add_provider(self.fpb, Target.BREAKPOINT_HW)
         self.bp_manager.add_provider(self.sw_bp, Target.BREAKPOINT_SW)
+
+    @property
+    def elf(self):
+        return self._elf
+
+    @elf.setter
+    def elf(self, elffile):
+        self._elf = elffile
 
     def init(self):
         """
@@ -451,6 +460,9 @@ class CortexM(Target):
         self.writeMemory(CortexM.DHCSR, CortexM.DBGKEY | CortexM.C_DEBUGEN | CortexM.C_HALT)
         self.dp.flush()
         self.notify(Notification(event=Target.EVENT_POST_HALT, source=self, data=Target.HALT_REASON_USER))
+
+    def _step_over_flash_breakpoint(self):
+        pass
 
     def step(self, disable_interrupts=True):
         """

@@ -25,7 +25,7 @@ from .fpb import FPB
 from .dwt import DWT
 from ..debug.breakpoints.manager import BreakpointManager
 from ..debug.breakpoints.software import SoftwareBreakpointProvider
-from ..debug.breakpoints.flash import FlashBreakpointProvider
+from ..debug.breakpoints.flash import (FlashBreakpoint, FlashBreakpointProvider)
 import logging
 from time import (time, sleep)
 
@@ -316,6 +316,7 @@ class CortexM(Target, CoreSightComponent):
         self._run_token = 0
         self._target_context = None
         self._elf = None
+        self._unused_ram = None
 
         # Set up breakpoints manager.
         self.sw_bp = SoftwareBreakpointProvider(self)
@@ -337,6 +338,12 @@ class CortexM(Target, CoreSightComponent):
     @elf.setter
     def elf(self, elffile):
         self._elf = elffile
+        unused = self._elf.unused_ranges
+        for range in unused:
+            if range.region.isRam:
+                self._unused_ram = range
+                logging.debug("unused ram = %s", self._unused_ram)
+                break
 
     def init(self):
         """
@@ -506,7 +513,22 @@ class CortexM(Target, CoreSightComponent):
             logging.error('cannot step: target not halted')
             return
 
+        pc = self.readCoreRegister('pc')
+        bp = self.bp_manager.find_live_breakpoint(pc)
+        logging.debug("pc=%x, bp=%s", pc, bp)
+
         self.notify(Notification(event=Target.EVENT_PRE_RUN, source=self, data=Target.RUN_TYPE_STEP))
+
+        # Get current PC.
+        steppingOverFlashBp = False
+        if bp and isinstance(bp, FlashBreakpoint) and self._unused_ram:
+            instr = self.read16(pc)
+            unusedStart = self._unused_ram.start
+            logging.debug("Stepping over flash bp @ 0x%x, using ram @ 0x%x", pc, unusedStart)
+            self.write16(unusedStart, instr)
+            self.write16(unusedStart + 2, 0xbe00)
+            self.writeCoreRegister('pc', unusedStart)
+            steppingOverFlashBp = True
 
         self.clearDebugCauseBits()
 
@@ -535,6 +557,14 @@ class CortexM(Target, CoreSightComponent):
         self.dp.flush()
 
         self._run_token += 1
+
+        if steppingOverFlashBp:
+            # Check PC after stepping.
+            newPc = self.readCoreRegister('pc')
+            logging.debug("Done stepping over flash bp; new pc = 0x%x", newPc)
+            if newPc == unusedStart + 2:
+                self.writeCoreRegister('pc', pc + 2)
+                logging.debug("Restoring pc to 0x%x", pc + 2)
 
         self.notify(Notification(event=Target.EVENT_POST_RUN, source=self, data=Target.RUN_TYPE_STEP))
 

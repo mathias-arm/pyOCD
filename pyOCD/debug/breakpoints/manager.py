@@ -51,6 +51,8 @@ class BreakpointManager(object):
         self._providers = {}
         self._ignore_notifications = False
         self._log = logging.getLogger('breakpoint.manager')
+        self._removed_step_flash_bp = None
+        self._last_run_token = -1
 
         # Subscribe to some notifications.
         self._core.subscribe(Target.EVENT_PRE_RUN, self.pre_run_handler)
@@ -69,6 +71,9 @@ class BreakpointManager(object):
 
     def find_breakpoint(self, addr):
         return self._updated_breakpoints.get(addr, None)
+
+    def find_live_breakpoint(self, addr):
+        return self._breakpoints.get(addr, None)
 
     ## @brief Set a hardware or software breakpoint at a specific location in memory.
     #
@@ -219,11 +224,38 @@ class BreakpointManager(object):
             added, removed = self._get_updated_breakpoints()
             self._log.debug("bpmgr: added=%s removed=%s", added, removed)
 
+            if isStep and len(removed) == 1 and self._removed_step_flash_bp is None:
+                pc = self._core.readCoreRegister('pc')
+                bp = removed[0]
+                if bp.addr == pc and bp.type == Target.BREAKPOINT_FLASH:
+                    self._log.debug("ignoring request to remove flash bp @ pc=0x%x", bp.addr)
+                    self._removed_step_flash_bp = bp
+                    removed = []
+                    del self._breakpoints[bp.addr]
+                    self._last_run_token = self._core.run_token
+
+            if self._removed_step_flash_bp is not None and self._last_run_token == self._core.run_token - 1:
+                foundIt = False
+                for i, bp in enumerate(added):
+                    if bp.addr == self._removed_step_flash_bp.addr:
+                        self._breakpoints[bp.addr] = self._removed_step_flash_bp
+                        del added[i]
+                        foundIt = True
+                        self._log.debug("flash bp @ 0x%x was virtually added back after step", self._removed_step_flash_bp.addr)
+                        break
+                if not foundIt:
+                    self._log.debug("really removing flash @ 0x%x because it wasn't added back", self._removed_step_flash_bp.addr)
+                    removed.append(self._removed_step_flash_bp)
+                    self._removed_step_flash_bp = None
+
             # Handle removed breakpoints first by asking the providers to remove them.
             for bp in removed:
                 assert bp.provider is not None
                 bp.provider.remove_breakpoint(bp)
-                del self._breakpoints[bp.addr]
+                try:
+                    del self._breakpoints[bp.addr]
+                except KeyError:
+                    self._log.debug("ignoring exception while removing bp @ 0x%x from list", bp.addr)
 
             # Only allow use of all hardware breakpoints if we're not stepping and there is
             # only a single added breakpoint.

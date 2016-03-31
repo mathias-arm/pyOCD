@@ -531,7 +531,7 @@ class CortexM(Target):
             logging.debug("Done stepping over flash bp; new pc = 0x%x", newPc)
             if newPc == unusedStart + 2:
                 self.writeCoreRegister('pc', pc + 2)
-                logging.debug("Restoring pc to 0x%x", pc)
+                logging.debug("Restoring pc to 0x%x", pc + 2)
 
         self.notify(Notification(event=Target.EVENT_POST_RUN, source=self, data=Target.RUN_TYPE_STEP))
 

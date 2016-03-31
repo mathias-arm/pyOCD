@@ -60,7 +60,7 @@ class Notifier(object):
 
     def notify(self, *notifications):
         for note in notifications:
-            logging.debug("Sending notification: %s", repr(note))
+#             logging.debug("Sending notification: %s", repr(note))
             for cb in self._subscribers.get(note.event, []):
                 cb(note)
 

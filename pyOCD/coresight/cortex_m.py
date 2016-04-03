@@ -307,7 +307,7 @@ class CortexM(Target):
     @elf.setter
     def elf(self, elffile):
         self._elf = elffile
-        unused = self._elf.get_unused_regions()
+        unused = self._elf.unused_ranges
         for range in unused:
             if range.region.isRam:
                 self._unused_ram = range

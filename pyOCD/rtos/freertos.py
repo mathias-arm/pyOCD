@@ -66,12 +66,9 @@ class TargetList(object):
 
 ## @brief
 class FreeRTOSThreadContext(DebugContext):
-    # SP is handled specially, so it is not in this dict.
-    CORE_REGISTER_OFFSETS = {
-                 0: 32, # r0
-                 1: 36, # r1
-                 2: 40, # r2
-                 3: 44, # r3
+    # SP/PSP are handled specially, so it is not in these dicts.
+
+    COMMON_REGISTER_OFFSETS = {
                  4: 0, # r4
                  5: 4, # r5
                  6: 8, # r6
@@ -80,11 +77,79 @@ class FreeRTOSThreadContext(DebugContext):
                  9: 20, # r9
                  10: 24, # r10
                  11: 28, # r11
+            }
+
+    NOFPU_REGISTER_OFFSETS = {
+                 0: 32, # r0
+                 1: 36, # r1
+                 2: 40, # r2
+                 3: 44, # r3
                  12: 48, # r12
                  14: 52, # lr
                  15: 56, # pc
                  16: 60, # xpsr
             }
+    NOFPU_REGISTER_OFFSETS.update(COMMON_REGISTER_OFFSETS)
+
+    FPU_BASIC_REGISTER_OFFSETS = {
+                -1: 32, # exception LR
+                 0: 36, # r0
+                 1: 40, # r1
+                 2: 44, # r2
+                 3: 48, # r3
+                 12: 42, # r12
+                 14: 56, # lr
+                 15: 60, # pc
+                 16: 64, # xpsr
+            }
+    FPU_BASIC_REGISTER_OFFSETS.update(COMMON_REGISTER_OFFSETS)
+
+    FPU_EXTENDED_REGISTER_OFFSETS = {
+                -1: 32, # exception LR
+                 0x50: 0, # s16
+                 0x51: 0, # s17
+                 0x52: 0, # s18
+                 0x53: 0, # s19
+                 0x54: 0, # s20
+                 0x55: 0, # s21
+                 0x56: 0, # s22
+                 0x57: 0, # s23
+                 0x58: 0, # s24
+                 0x59: 0, # s25
+                 0x5a: 0, # s26
+                 0x5b: 0, # s27
+                 0x5c: 0, # s28
+                 0x5d: 0, # s29
+                 0x5e: 0, # s30
+                 0x5f: 0, # s31
+                 0: 36, # r0
+                 1: 40, # r1
+                 2: 44, # r2
+                 3: 48, # r3
+                 12: 42, # r12
+                 14: 56, # lr
+                 15: 60, # pc
+                 16: 64, # xpsr
+                 0x40: 0, # s0
+                 0x41: 0, # s1
+                 0x42: 0, # s2
+                 0x43: 0, # s3
+                 0x44: 0, # s4
+                 0x45: 0, # s5
+                 0x46: 0, # s6
+                 0x47: 0, # s7
+                 0x48: 0, # s8
+                 0x49: 0, # s9
+                 0x4a: 0, # s10
+                 0x4b: 0, # s11
+                 0x4c: 0, # s12
+                 0x4d: 0, # s13
+                 0x4e: 0, # s14
+                 0x4f: 0, # s15
+                 33: 0, # fpscr
+            }
+    FPU_EXTENDED_REGISTER_OFFSETS.update(COMMON_REGISTER_OFFSETS)
+
 #                  'msp': 17,
 #                  'psp': 18,
 
@@ -95,6 +160,7 @@ class FreeRTOSThreadContext(DebugContext):
         super(FreeRTOSThreadContext, self).__init__(parentContext.core)
         self._parent = parentContext
         self._thread = thread
+        self._has_fpu = parentContext.core.has_fpu
 
     def readCoreRegistersRaw(self, reg_list):
         reg_list = [self.registerNameToIndex(reg) for reg in reg_list]
@@ -110,6 +176,24 @@ class FreeRTOSThreadContext(DebugContext):
         sp = self._thread.get_stack_pointer()
         saveSp = sp
 
+        # Determine which register offset table to use and the offsets past the saved state.
+        realSpOffset = 0x40
+        realSpExceptionOffset = 0x20
+        table = self.NOFPU_REGISTER_OFFSETS
+        if self._has_fpu:
+            # Read stacked exception return LR.
+            offset = self.FPU_BASIC_REGISTER_OFFSETS[-1]
+            exceptionLR = self._parent.read32(sp + offset)
+
+            # Check bit 4 of the saved exception LR to determine if FPU registers were stacked.
+            if (exceptionLR & (1 << 4)) != 0:
+                table = self.FPU_BASIC_REGISTER_OFFSETS
+                realSpOffset = 0x44
+            else:
+                table = self.FPU_EXTENDED_REGISTER_OFFSETS
+                realSpOffset = 0xcc
+                realSpExceptionOffset = 0x6c
+
         for reg in reg_list:
             # Check for regs we can't access.
             if isCurrent and inException:
@@ -117,24 +201,22 @@ class FreeRTOSThreadContext(DebugContext):
                     reg_vals.append(0)
                     continue
                 if reg == 18 or reg == 13: # PSP
-                    log.debug("FreeRTOS: psp = 0x%08x", saveSp)# + 0x20)
-                    reg_vals.append(saveSp)# + 0x20)
+                    log.debug("FreeRTOS: psp = 0x%08x", saveSp + realSpExceptionOffset)
+                    reg_vals.append(saveSp + realSpExceptionOffset)
                     continue
-#                 else:
-#                     reg_vals.append(self._core.readCoreRegisterRaw(reg))
-#                 continue
 
             # Must handle stack pointer specially.
             if reg == 13:
-                reg_vals.append(saveSp)
+                reg_vals.append(saveSp + realSpOffset)
                 continue
 
-            spOffset = self.CORE_REGISTER_OFFSETS.get(reg, None)
+            # Look up offset for this register on the stack.
+            spOffset = table.get(reg, None)
             if spOffset is None:
                 reg_vals.append(self._parent.readCoreRegisterRaw(reg))
                 continue
             if isCurrent and inException:
-                spOffset -= 0x20
+                spOffset -= realSpExceptionOffset #0x20
 
             try:
                 reg_vals.append(self._parent.read32(sp + spOffset))
@@ -266,7 +348,7 @@ class HandlerModeThread(TargetThread):
     def __repr__(self):
         return str(self)
 
-## @brief Base class for RTOS support plugins.
+## @brief Thread provider for FreeRTOS.
 class FreeRTOSThreadProvider(ThreadProvider):
 
     ## Required FreeRTOS symbols.
@@ -303,6 +385,10 @@ class FreeRTOSThreadProvider(ThreadProvider):
         tasksWaitingTerminationSym = self._lookup_symbols(["xTasksWaitingTermination"], symbolProvider)
         if tasksWaitingTerminationSym is not None:
             self._symbols['xTasksWaitingTermination'] = tasksWaitingTerminationSym['xTasksWaitingTermination']
+
+        # Look up vPortEnableVFP() to determine if the FreeRTOS port supports the FPU.
+        vPortEnableVFP = self._lookup_symbols(["vPortEnableVFP"], symbolProvider)
+        self._fpu_port = vPortEnableVFP is not None
 
         # Check for the expected list size. These two symbols are each a single list and xDelayedTaskList2
         # immediately follows xDelayedTaskList1, so we can just subtract their addresses to get the

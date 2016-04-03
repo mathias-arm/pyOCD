@@ -21,6 +21,7 @@ from ..debug.svd import (SVDFile, SVDLoader)
 from ..debug.context import DebugContext
 from ..debug.cache import CachingDebugContext
 from ..debug.elf.elf import ELFBinaryFile
+from ..debug.elf.flash_reader import FlashReaderContext
 from ..utility.notification import Notification
 import threading
 import logging
@@ -54,8 +55,9 @@ class CoreSightTarget(Target):
         if filename is None:
             self._elf = None
         else:
-            self._elf = ELFBinaryFile(filename, self.cores[0])
+            self._elf = ELFBinaryFile(filename, self.memory_map)
             self.cores[0].elf = self._elf
+            self._core_contexts[0] = FlashReaderContext(self._core_contexts[0], self._elf)
 
     def select_core(self, num):
         if not self.cores.has_key(num):

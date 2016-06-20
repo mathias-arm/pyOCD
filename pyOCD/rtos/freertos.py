@@ -172,25 +172,27 @@ class FreeRTOSThreadContext(DebugContext):
             return self._parent.readCoreRegistersRaw(reg_list)
 
         sp = self._thread.get_stack_pointer()
-        saveSp = sp
 
         # Determine which register offset table to use and the offsets past the saved state.
         realSpOffset = 0x40
         realSpExceptionOffset = 0x20
         table = self.NOFPU_REGISTER_OFFSETS
         if self._has_fpu:
-            # Read stacked exception return LR.
-            offset = self.FPU_BASIC_REGISTER_OFFSETS[-1]
-            exceptionLR = self._parent.read32(sp + offset)
+            try:
+                # Read stacked exception return LR.
+                offset = self.FPU_BASIC_REGISTER_OFFSETS[-1]
+                exceptionLR = self._parent.read32(sp + offset)
 
-            # Check bit 4 of the saved exception LR to determine if FPU registers were stacked.
-            if (exceptionLR & (1 << 4)) != 0:
-                table = self.FPU_BASIC_REGISTER_OFFSETS
-                realSpOffset = 0x44
-            else:
-                table = self.FPU_EXTENDED_REGISTER_OFFSETS
-                realSpOffset = 0xcc
-                realSpExceptionOffset = 0x6c
+                # Check bit 4 of the saved exception LR to determine if FPU registers were stacked.
+                if (exceptionLR & (1 << 4)) != 0:
+                    table = self.FPU_BASIC_REGISTER_OFFSETS
+                    realSpOffset = 0x44
+                else:
+                    table = self.FPU_EXTENDED_REGISTER_OFFSETS
+                    realSpOffset = 0xcc
+                    realSpExceptionOffset = 0x6c
+            except DAPAccess.TransferError:
+                log.debug("Transfer error while reading thread's saved LR")
 
         for reg in reg_list:
             # Check for regs we can't access.
@@ -199,13 +201,12 @@ class FreeRTOSThreadContext(DebugContext):
                     reg_vals.append(0)
                     continue
                 if reg == 18 or reg == 13: # PSP
-                    log.debug("FreeRTOS: psp = 0x%08x", saveSp + realSpExceptionOffset)
-                    reg_vals.append(saveSp + realSpExceptionOffset)
+                    reg_vals.append(sp + realSpExceptionOffset)
                     continue
 
             # Must handle stack pointer specially.
             if reg == 13:
-                reg_vals.append(saveSp + realSpOffset)
+                reg_vals.append(sp + realSpOffset)
                 continue
 
             # Look up offset for this register on the stack.
@@ -265,7 +266,10 @@ class FreeRTOSThread(TargetThread):
             sp = self._target_context.readCoreRegister('psp')
         else:
             # Get stack pointer saved in thread struct.
-            sp = self._target_context.read32(self._base + THREAD_STACK_POINTER_OFFSET)
+            try:
+                sp = self._target_context.read32(self._base + THREAD_STACK_POINTER_OFFSET)
+            except DAPAccess.TransferError:
+                log.debug("Transfer error while reading thread's stack pointer @ 0x%08x", self._base + THREAD_STACK_POINTER_OFFSET)
         return sp
 
     @property

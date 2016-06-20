@@ -32,6 +32,7 @@ def read_c_string(context, ptr):
     s = ""
     done = False
     count = 0
+    badCount = 0
     try:
         while not done and count < 256:
             data = context.readBlockMemoryUnaligned8(ptr, 16)
@@ -42,9 +43,20 @@ def read_c_string(context, ptr):
                 if c == 0:
                     done = True
                     break
-                s += chr(c)
+                elif c > 127:
+                    # Replace non-ASCII characters. If there is a run of invalid characters longer
+                    # than 4, then terminate the string early.
+                    badCount += 1
+                    if badCount > 4:
+                        done = True
+                        break
+                    s += '?'
+                else:
+                    s += chr(c)
+                    badCount = 0
     except DAPAccess.TransferError:
         logging.debug("TransferError while trying to read 16 bytes at 0x%08x", ptr)
+
     return s
 
 ## @brief Standard Cortex-M register stacking context.
@@ -147,6 +159,46 @@ class CommonThreadContext(DebugContext):
 
     def writeCoreRegistersRaw(self, reg_list, data_list):
         self._core.writeCoreRegistersRaw(reg_list, data_list)
+
+## @brief Class representing the handler mode.
+class HandlerModeThread(TargetThread):
+    def __init__(self, targetContext, provider):
+        super(HandlerModeThread, self).__init__()
+        self._target_context = targetContext
+        self._provider = provider
+
+    def get_stack_pointer(self):
+        return self._target_context.readCoreRegister('msp')
+
+    @property
+    def priority(self):
+        return 0
+
+    @property
+    def unique_id(self):
+        return 2
+
+    @property
+    def name(self):
+        return "Handler mode"
+
+    @property
+    def description(self):
+        return ""
+
+    @property
+    def is_current(self):
+        return self._provider.get_ipsr() > 0
+
+    @property
+    def context(self):
+        return self._target_context
+
+    def __str__(self):
+        return "<HandlerModeThread@0x%08x>" % (id(self))
+
+    def __repr__(self):
+        return str(self)
 
 
 

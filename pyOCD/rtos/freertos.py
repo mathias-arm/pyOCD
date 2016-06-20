@@ -16,7 +16,7 @@
 """
 
 from .provider import (TargetThread, ThreadProvider)
-from .common import read_c_string
+from .common import (read_c_string, HandlerModeThread)
 from ..debug.context import DebugContext
 from ..coresight.cortex_m import CORE_REGISTER
 from pyOCD.pyDAPAccess import DAPAccess
@@ -106,52 +106,50 @@ class FreeRTOSThreadContext(DebugContext):
 
     FPU_EXTENDED_REGISTER_OFFSETS = {
                 -1: 32, # exception LR
-                 0x50: 0, # s16
-                 0x51: 0, # s17
-                 0x52: 0, # s18
-                 0x53: 0, # s19
-                 0x54: 0, # s20
-                 0x55: 0, # s21
-                 0x56: 0, # s22
-                 0x57: 0, # s23
-                 0x58: 0, # s24
-                 0x59: 0, # s25
-                 0x5a: 0, # s26
-                 0x5b: 0, # s27
-                 0x5c: 0, # s28
-                 0x5d: 0, # s29
-                 0x5e: 0, # s30
-                 0x5f: 0, # s31
-                 0: 36, # r0
-                 1: 40, # r1
-                 2: 44, # r2
-                 3: 48, # r3
-                 12: 42, # r12
-                 14: 56, # lr
-                 15: 60, # pc
-                 16: 64, # xpsr
-                 0x40: 0, # s0
-                 0x41: 0, # s1
-                 0x42: 0, # s2
-                 0x43: 0, # s3
-                 0x44: 0, # s4
-                 0x45: 0, # s5
-                 0x46: 0, # s6
-                 0x47: 0, # s7
-                 0x48: 0, # s8
-                 0x49: 0, # s9
-                 0x4a: 0, # s10
-                 0x4b: 0, # s11
-                 0x4c: 0, # s12
-                 0x4d: 0, # s13
-                 0x4e: 0, # s14
-                 0x4f: 0, # s15
-                 33: 0, # fpscr
+                 0x50: 36, # s16
+                 0x51: 40, # s17
+                 0x52: 44, # s18
+                 0x53: 48, # s19
+                 0x54: 52, # s20
+                 0x55: 56, # s21
+                 0x56: 60, # s22
+                 0x57: 64, # s23
+                 0x58: 68, # s24
+                 0x59: 72, # s25
+                 0x5a: 76, # s26
+                 0x5b: 80, # s27
+                 0x5c: 84, # s28
+                 0x5d: 88, # s29
+                 0x5e: 92, # s30
+                 0x5f: 96, # s31
+                 0: 100, # r0
+                 1: 104, # r1
+                 2: 108, # r2
+                 3: 112, # r3
+                 12: 116, # r12
+                 14: 120, # lr
+                 15: 124, # pc
+                 16: 128, # xpsr
+                 0x40: 132, # s0
+                 0x41: 136, # s1
+                 0x42: 140, # s2
+                 0x43: 144, # s3
+                 0x44: 148, # s4
+                 0x45: 152, # s5
+                 0x46: 156, # s6
+                 0x47: 160, # s7
+                 0x48: 164, # s8
+                 0x49: 168, # s9
+                 0x4a: 172, # s10
+                 0x4b: 176, # s11
+                 0x4c: 180, # s12
+                 0x4d: 184, # s13
+                 0x4e: 188, # s14
+                 0x4f: 192, # s15
+                 33: 196, # fpscr
+                 # (reserved word: 200)
             }
     FPU_EXTENDED_REGISTER_OFFSETS.update(COMMON_REGISTER_OFFSETS)
-
-#                  'msp': 17,
-#                  'psp': 18,
 
     # Registers that are not available on the stack for exceptions.
     EXCEPTION_UNAVAILABLE_REGS = (4, 5, 6, 7, 8, 9, 10, 11)
@@ -304,46 +302,6 @@ class FreeRTOSThread(TargetThread):
 
     def __str__(self):
         return "<FreeRTOSThread@0x%08x id=%x name=%s>" % (id(self), self.unique_id, self.name)
-
-    def __repr__(self):
-        return str(self)
-
-## @brief Class representing the handler mode.
-class HandlerModeThread(TargetThread):
-    def __init__(self, targetContext, provider):
-        super(HandlerModeThread, self).__init__()
-        self._target_context = targetContext
-        self._provider = provider
-
-    def get_stack_pointer(self):
-        return self._target_context.readCoreRegister('msp')
-
-    @property
-    def priority(self):
-        return 0
-
-    @property
-    def unique_id(self):
-        return 2
-
-    @property
-    def name(self):
-        return "Handler mode"
-
-    @property
-    def description(self):
-        return ""
-
-    @property
-    def is_current(self):
-        return self._provider.get_ipsr() > 0
-
-    @property
-    def context(self):
-        return self._target_context
-
-    def __str__(self):
-        return "<HandlerModeThread@0x%08x>" % (id(self))
 
     def __repr__(self):
         return str(self)

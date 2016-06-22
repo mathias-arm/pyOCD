@@ -243,11 +243,7 @@ class ArgonThread(TargetThread):
         self._name = "?"
 
         try:
-            self._priority = self._target_context.read8(self._base + THREAD_PRIORITY_OFFSET)
-
-            self._state = self._target_context.read8(self._base + THREAD_STATE_OFFSET)
-            if self._state > self.DONE:
-                self._state = self.UNKNOWN
+            self.update_info()
 
             ptr = self._target_context.read32(self._base + THREAD_NAME_OFFSET)
             self._name = read_c_string(self._target_context, ptr)
@@ -266,6 +262,16 @@ class ArgonThread(TargetThread):
             except DAPAccess.TransferError:
                 log.debug("Transfer error while reading thread's stack pointer @ 0x%08x", self._base + THREAD_STACK_POINTER_OFFSET)
         return sp
+
+    def update_info(self):
+        try:
+            self._priority = self._target_context.read8(self._base + THREAD_PRIORITY_OFFSET)
+
+            self._state = self._target_context.read8(self._base + THREAD_STATE_OFFSET)
+            if self._state > self.DONE:
+                self._state = self.UNKNOWN
+        except DAPAccess.TransferError:
+            log.debug("Transfer error while reading thread info")
 
     @property
     def state(self):
@@ -339,6 +345,9 @@ class ArgonThreadProvider(ThreadProvider):
                 # Reuse existing thread objects if possible.
                 if threadBase in self._threads:
                     t = self._threads[threadBase]
+
+                    # Ask the thread object to update its state and priority.
+                    t.update_info()
                 else:
                     t = ArgonThread(self._target_context, self, threadBase)
                 log.debug("Thread 0x%08x (%s)", threadBase, t.name)

@@ -219,7 +219,7 @@ class ArgonThread(TargetThread):
     RUNNING = 3
     BLOCKED = 4
     SLEEPING = 5
-    DONE = 5
+    DONE = 6
 
     STATE_NAMES = {
             UNKNOWN : "Unknown",

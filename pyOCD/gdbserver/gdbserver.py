@@ -307,6 +307,12 @@ class GDBServer(threading.Thread):
             self.telnet_console.stop()
             self.telnet_console = None
 
+    def _cleanup_for_next_connection(self):
+        self.non_stop = False
+        self.thread_provider = None
+        self.did_init_thread_providers = False
+        self.current_thread_id = 0
+
     def run(self):
         logging.info('GDB server started at port:%d', self.port)
 
@@ -400,6 +406,7 @@ class GDBServer(threading.Thread):
                         self.packet_io = None
                         self.lock.release()
                         if self.persist:
+                            self._cleanup_for_next_connection()
                             break
                         else:
                             self.shutdown_event.set()
@@ -1018,16 +1025,17 @@ class GDBServer(threading.Thread):
     def initThreadProviders(self):
         symbol_provider = GDBSymbolProvider(self)
 
-        try:
-            for rtosName, rtosClass in RTOS.iteritems():
+        for rtosName, rtosClass in RTOS.iteritems():
+            try:
                 logging.info("Attempting to load %s", rtosName)
                 rtos = rtosClass(self.target)
                 if rtos.init(symbol_provider):
                     logging.info("%s loaded successfully", rtosName)
                     self.thread_provider = rtos
                     break
-        except RuntimeError as e:
-            logging.error("Error during symbol lookup: " + str(e))
+            except RuntimeError as e:
+                logging.error("Error during symbol lookup: " + str(e))
+                traceback.print_exc()
 
         self.did_init_thread_providers = True
 

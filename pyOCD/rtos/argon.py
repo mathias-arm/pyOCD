@@ -24,7 +24,6 @@ import logging
 
 IS_RUNNING_OFFSET = 0x54
 
-ALL_OBJECTS_OFFSET = 0xb0
 ALL_OBJECTS_THREADS_OFFSET = 0
 
 THREAD_STACK_POINTER_OFFSET = 0
@@ -91,30 +90,30 @@ class ArgonThreadContext(DebugContext):
 
     FPU_EXTENDED_REGISTER_OFFSETS = {
                 # Software stacked
-                 0x50: 0, # s16
-                 0x51: 4, # s17
-                 0x52: 8, # s18
-                 0x53: 12, # s19
-                 0x54: 16, # s20
-                 0x55: 20, # s21
-                 0x56: 24, # s22
-                 0x57: 28, # s23
-                 0x58: 32, # s24
-                 0x59: 36, # s25
-                 0x5a: 40, # s26
-                 0x5b: 44, # s27
-                 0x5c: 48, # s28
-                 0x5d: 52, # s29
-                 0x5e: 56, # s30
-                 0x5f: 60, # s31
-                 4: 64, # r4
-                 5: 68, # r5
-                 6: 72, # r6
-                 7: 76, # r7
-                 8: 80, # r8
-                 9: 84, # r9
-                 10: 88, # r10
-                 11: 92, # r11
+                 4: 0, # r4
+                 5: 4, # r5
+                 6: 8, # r6
+                 7: 12, # r7
+                 8: 16, # r8
+                 9: 20, # r9
+                 10: 24, # r10
+                 11: 28, # r11
+                 0x50: 32, # s16
+                 0x51: 36, # s17
+                 0x52: 40, # s18
+                 0x53: 44, # s19
+                 0x54: 48, # s20
+                 0x55: 52, # s21
+                 0x56: 56, # s22
+                 0x57: 60, # s23
+                 0x58: 64, # s24
+                 0x59: 68, # s25
+                 0x5a: 72, # s26
+                 0x5b: 76, # s27
+                 0x5c: 80, # s28
+                 0x5d: 84, # s29
+                 0x5e: 88, # s30
+                 0x5f: 92, # s31
                 # Hardware stacked
                  0: 96, # r0
                  1: 100, # r1
@@ -324,6 +323,7 @@ class ArgonThreadProvider(ThreadProvider):
         super(ArgonThreadProvider, self).__init__(target)
         self._target_context = self._target.getTargetContext()
         self.g_ar = None
+        self.g_ar_objects = None
         self._all_threads = None
         self._threads = {}
 
@@ -333,7 +333,12 @@ class ArgonThreadProvider(ThreadProvider):
             return False
         log.debug("Argon: g_ar = 0x%08x", self.g_ar)
 
-        self._all_threads = self.g_ar + ALL_OBJECTS_OFFSET + ALL_OBJECTS_THREADS_OFFSET
+        self.g_ar_objects = symbolProvider.get_symbol_value("g_ar_objects")
+        if self.g_ar_objects is None:
+            return False
+        log.debug("Argon: g_ar_objects = 0x%08x", self.g_ar_objects)
+
+        self._all_threads = self.g_ar_objects + ALL_OBJECTS_THREADS_OFFSET
 
         return True
 

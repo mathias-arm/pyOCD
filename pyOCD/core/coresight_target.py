@@ -57,7 +57,7 @@ class CoreSightTarget(Target):
         else:
             self._elf = ELFBinaryFile(filename, self.memory_map)
             self.cores[0].elf = self._elf
-            self._core_contexts[0] = FlashReaderContext(self._core_contexts[0], self._elf)
+            self.cores[0].setTargetContext(FlashReaderContext(self.cores[0].getTargetContext(), self._elf))
 
     def select_core(self, num):
         if not self.cores.has_key(num):

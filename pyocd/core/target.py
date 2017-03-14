@@ -1,6 +1,6 @@
 """
  mbed CMSIS-DAP debugger
- Copyright (c) 2006-2018 ARM Limited
+ Copyright (c) 2006-2019 ARM Limited
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -18,6 +18,46 @@
 from .memory_interface import MemoryInterface
 from ..utility.notification import Notifier
 from .memory_map import MemoryMap
+
+## @brief Encapsulates device info.
+#
+# The constructor takes the vendor name, vendor ID, and the hierarchy of family, zero or more
+# subfamilies, and device part number. These values should match those in the CMSIS-PACK DFP.
+#
+# Use the hierarchy property to get a list of the device family data in increasing specificity.
+class DeviceInfo(object):
+    def __init__(self, vendor, vendor_id, *families):
+        self._vendor = vendor
+        self._vendor_id = 0
+        self._subfamilies = families[0:-1]
+        self._device = families[-1]
+
+    @property
+    def vendor(self):
+        return self._vendor
+
+    @property
+    def vendor_id(self):
+        return self._vendor_id
+
+    @property
+    def subfamilies(self):
+        return self._subfamilies
+
+    @property
+    def part_number(self):
+        return self._device
+
+    @property
+    ## @brief Returns a list of vendor, family, subfamilies, and part number.
+    def hierarchy(self):
+        return [self.vendor] + list(self.subfamilies) + [self.device]
+
+    def __str__(self):
+        return ", ".join(self.hierarchy)
+
+    def __repr__(self):
+        return "<%s@%x %s>" % (self.__class__.__name__, id(self), self)
 
 class Target(MemoryInterface, Notifier):
 
@@ -83,6 +123,11 @@ class Target(MemoryInterface, Notifier):
         self.has_fpu = False
         self._svd_location = None
         self._svd_device = None
+        self._device_info = None
+
+    @property
+    def info(self):
+        return self._device_info
 
     @property
     def session(self):

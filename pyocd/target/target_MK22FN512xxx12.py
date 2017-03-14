@@ -1,6 +1,6 @@
 """
  mbed CMSIS-DAP debugger
- Copyright (c) 2006-2013,2018 ARM Limited
+ Copyright (c) 2014-2019 ARM Limited
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  limitations under the License.
 """
 
+from ..core.target import DeviceInfo
 from .family.target_kinetis import Kinetis
 from .family.flash_kinetis import Flash_Kinetis
 from ..core.memory_map import (FlashRegion, RamRegion, MemoryMap)
@@ -86,5 +87,6 @@ class K22F(Kinetis):
 
     def __init__(self, link):
         super(K22F, self).__init__(link, self.memoryMap)
+        self._device_info = DeviceInfo("NXP", 11, "K20 Series", "MK22FN512xxx12")
         self._svd_location = SVDFile(vendor="Freescale", filename="MK22F51212.svd", is_local=False)
 

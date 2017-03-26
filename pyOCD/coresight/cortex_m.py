@@ -33,6 +33,7 @@ ARM_CortexM0 = 0xC20
 ARM_CortexM1 = 0xC21
 ARM_CortexM3 = 0xC23
 ARM_CortexM4 = 0xC24
+ARM_CortexM7 = 0xC27
 ARM_CortexM0p = 0xC60
 
 # User-friendly names for core types.
@@ -41,6 +42,7 @@ CORE_TYPE_NAME = {
                  ARM_CortexM1 : "Cortex-M1",
                  ARM_CortexM3 : "Cortex-M3",
                  ARM_CortexM4 : "Cortex-M4",
+                 ARM_CortexM7 : "Cortex-M7",
                  ARM_CortexM0p : "Cortex-M0+"
                }
 
@@ -113,6 +115,22 @@ CORE_REGISTER = {
                  's29': 0x5d,
                  's30': 0x5e,
                  's31': 0x5f,
+                 'd0': -100,
+                 'd1': -101,
+                 'd2': -102,
+                 'd3': -103,
+                 'd4': -104,
+                 'd5': -105,
+                 'd6': -106,
+                 'd7': -107,
+                 'd8': -108,
+                 'd9': -109,
+                 'd10': -110,
+                 'd11': -111,
+                 'd12': -112,
+                 'd13': -113,
+                 'd14': -114,
+                 'd15': -115,
                  }
 
 class CortexM(Target):
@@ -198,6 +216,11 @@ class CortexM(Target):
 
     DBGKEY = (0xA05F << 16)
 
+    # Media and FP Feature Register 0
+    MVFR0 = 0xE000EF40
+    MVFR0_DOUBLE_PRECISION_MASK = 0x00000f00
+    MVFR0_DOUBLE_PRECISION_SHIFT = 8
+
     class RegisterInfo(object):
         def __init__(self, name, bitsize, reg_type, reg_group):
             self.name = name
@@ -276,12 +299,33 @@ class CortexM(Target):
         RegisterInfo('s31',     32,         'float',        'float'),
         ]
 
+    regs_float_double = [
+        #            Name       bitsize     type            group
+        RegisterInfo('d0' ,     64,         'float',        'float'),
+        RegisterInfo('d1' ,     64,         'float',        'float'),
+        RegisterInfo('d2' ,     64,         'float',        'float'),
+        RegisterInfo('d3' ,     64,         'float',        'float'),
+        RegisterInfo('d4' ,     64,         'float',        'float'),
+        RegisterInfo('d5' ,     64,         'float',        'float'),
+        RegisterInfo('d6' ,     64,         'float',        'float'),
+        RegisterInfo('d7' ,     64,         'float',        'float'),
+        RegisterInfo('d8' ,     64,         'float',        'float'),
+        RegisterInfo('d9' ,     64,         'float',        'float'),
+        RegisterInfo('d10',     64,         'float',        'float'),
+        RegisterInfo('d11',     64,         'float',        'float'),
+        RegisterInfo('d12',     64,         'float',        'float'),
+        RegisterInfo('d13',     64,         'float',        'float'),
+        RegisterInfo('d14',     64,         'float',        'float'),
+        RegisterInfo('d15',     64,         'float',        'float'),
+        ]
+
     def __init__(self, link, dp, ap, memoryMap=None, core_num=0):
         super(CortexM, self).__init__(link, memoryMap)
 
         self.arch = 0
         self.core_type = 0
         self.has_fpu = False
+        self.has_fpu_double = False
         self.dp = dp
         self.ap = ap
         self.core_number = core_num
@@ -327,7 +371,7 @@ class CortexM(Target):
             self.register_list.append(reg)
             SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
         # Check if target has ARMv7 registers
-        if self.core_type in  (ARM_CortexM3, ARM_CortexM4):
+        if self.core_type in (ARM_CortexM3, ARM_CortexM4, ARM_CortexM7):
             for reg in self.regs_system_armv7_only:
                 self.register_list.append(reg)
                 SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
@@ -337,6 +381,10 @@ class CortexM(Target):
             for reg in self.regs_float:
                 self.register_list.append(reg)
                 SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
+            if self.has_fpu_double:
+                for reg in self.regs_float_double:
+                    self.register_list.append(reg)
+                    SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
         self.targetXML = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "gdb-target.dtd">' + tostring(xml_root)
 
     ## @brief Read the CPUID register and determine core type.
@@ -356,7 +404,7 @@ class CortexM(Target):
     #
     # The core type must have been identified prior to calling this function.
     def checkForFPU(self):
-        if self.core_type != ARM_CortexM4:
+        if self.core_type not in (ARM_CortexM4, ARM_CortexM7):
             self.has_fpu = False
             return
 
@@ -371,7 +419,19 @@ class CortexM(Target):
         self.write32(CortexM.CPACR, originalCpacr)
 
         if self.has_fpu:
-            logging.info("FPU present")
+            # Now check whether double-precision is supported.
+            mvfr0 = self.read32(CortexM.MVFR0)
+            dp_val = (mvfr0 & CortexM.MVFR0_DOUBLE_PRECISION_MASK) >> CortexM.MVFR0_DOUBLE_PRECISION_SHIFT
+            self.has_fpu_double = (dp_val == 2)
+
+            if self.core_type == ARM_CortexM7:
+                if self.has_fpu_double:
+                    fpu_type = "FPv5-DP"
+                else:
+                    fpu_type = "FPv5-SP"
+            else:
+                fpu_type = "FPv4-SP"
+            logging.info("FPU present: " + fpu_type)
 
     def readIDCode(self):
         """
@@ -636,6 +696,8 @@ class CortexM(Target):
                 raise ValueError("unknown reg: %d" % reg)
             elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
                 raise ValueError("attempt to read FPU register without FPU")
+            elif ((reg <= -100) and (not self.has_fpu_double)):
+                raise ValueError("attempt to read double-precision FPU register without FPv5")
 
         # Begin all reads and writes
         dhcsr_cb_list = []
@@ -708,6 +770,8 @@ class CortexM(Target):
                 raise ValueError("unknown reg: %d" % reg)
             elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
                 raise ValueError("attempt to write FPU register without FPU")
+            elif ((reg <= -100) and (not self.has_fpu_double)):
+                raise ValueError("attempt to write double-precision FPU register without FPv5")
 
         # Read special register if it is present in the list
         for reg in reg_list:

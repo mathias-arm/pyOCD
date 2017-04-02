@@ -89,6 +89,7 @@ class Flash(object):
         self.flash_algo = flash_algo
         self.flash_algo_debug = False
         if flash_algo is not None:
+            self.is_valid = True
             self.use_analyzer = flash_algo['analyzer_supported']
             self.end_flash_algo = flash_algo['load_address'] + len(flash_algo) * 4
             self.begin_stack = flash_algo['begin_stack']
@@ -105,10 +106,15 @@ class Flash(object):
             self.double_buffer_supported = len(self.page_buffers) > 1
 
         else:
+            self.is_valid = False
+            self.use_analyzer = False
             self.end_flash_algo = None
             self.begin_stack = None
             self.begin_data = None
             self.static_base = None
+            self.min_program_length = 0
+            self.page_buffers = []
+            self.double_buffer_supported = False
 
     @property
     def minimumProgramLength(self):

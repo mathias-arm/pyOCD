@@ -215,10 +215,15 @@ class GDBServer(threading.Thread):
     This class start a GDB server listening a gdb connection on a specific port.
     It implements the RSP (Remote Serial Protocol).
     """
-    def __init__(self, board, port_urlWSS, options={}):
+    def __init__(self, board, port_urlWSS, options={}, core=None):
         threading.Thread.__init__(self)
         self.board = board
-        self.target = board.target
+        if core is None:
+            self.core = 0
+            self.target = board.target
+        else:
+            self.core = core
+            self.target = board.target.cores[core]
         self.log = logging.getLogger('gdbserver')
         self.flash = board.flash
         self.abstract_socket = None
@@ -240,7 +245,7 @@ class GDBServer(threading.Thread):
                 | (Target.CATCH_COPROCESSOR_ERR if 'p' in self.vector_catch else 0) \
                 | (Target.CATCH_CORE_RESET if ('r' in self.vector_catch or self.break_on_reset) else 0) \
                 | (Target.CATCH_ALL if 'a' in self.vector_catch else 0))
-        self.board.target.setVectorCatch(mask)
+        self.target.setVectorCatch(mask)
         self.step_into_interrupt = options.get('step_into_interrupt', False)
         self.persist = options.get('persist', False)
         self.soft_bkpt_as_hard = options.get('soft_bkpt_as_hard', False)
@@ -261,7 +266,10 @@ class GDBServer(threading.Thread):
         self.lock = threading.Lock()
         self.shutdown_event = threading.Event()
         self.detach_event = threading.Event()
-        self.target_context = self.target.getTargetContext()
+        if core is None:
+            self.target_context = self.board.target.getTargetContext()
+        else:
+            self.target_context = self.board.target.getTargetContext(core=core)
         self.target_facade = GDBDebugContextFacade(self.target_context)
         self.thread_provider = None
         self.did_init_thread_providers = False
@@ -1115,10 +1123,16 @@ class GDBServer(threading.Thread):
             if resultMask & 0x1:
                 self.target.init()
             if (resultMask & 0x6) == 0x6:
-                self.target.resetStopOnReset()
+                if self.core == 0:
+                    self.target.resetStopOnReset()
+                else:
+                    self.log.debug("Ignoring reset request for core #%d", self.core)
             elif resultMask & 0x2:
                 # on 'reset' still do a reset halt
-                self.target.resetStopOnReset()
+                if self.core == 0:
+                    self.target.resetStopOnReset()
+                else:
+                    self.log.debug("Ignoring reset request for core #%d", self.core)
                 # self.target.reset()
             elif resultMask & 0x4:
                 self.target.halt()
@@ -1239,8 +1253,11 @@ class GDBServer(threading.Thread):
         root = Element('threads')
 
         if not self.is_threading_enabled():
-            t = SubElement(root, 'thread', id="1", core="0")
-            t.text = "Thread mode"
+            t = SubElement(root, 'thread', id="1", core=str(self.core))
+            if self.is_target_in_reset():
+                t.text = "Reset"
+            else:
+                t.text = "Thread mode"
         else:
             threads = self.thread_provider.get_threads()
             for thread in threads:
@@ -1260,4 +1277,6 @@ class GDBServer(threading.Thread):
         return (self.thread_provider is not None) and self.thread_provider.is_enabled \
             and (self.thread_provider.current_thread is not None)
 
+    def is_target_in_reset(self):
+        return self.target.getState() == Target.TARGET_RESET
 

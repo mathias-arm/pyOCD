@@ -45,7 +45,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         super(FlashBreakpointProvider, self).__init__(core)
         self._flash = core.flash
         self._analyzer_supported = self._flash.use_analyzer
-        self._log = logging.getLogger('flashbp')
+        self._log = logging.getLogger('breakpoint.flash')
         self._updated_breakpoints = {}
         self._ignore_notifications = False
         self._enable_filter = True

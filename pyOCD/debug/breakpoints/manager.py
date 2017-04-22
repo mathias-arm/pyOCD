@@ -50,6 +50,7 @@ class BreakpointManager(object):
         self._flash_bp = None
         self._providers = {}
         self._ignore_notifications = False
+        self._log = logging.getLogger('breakpoint.manager')
 
         # Subscribe to some notifications.
         self._core.subscribe(Target.EVENT_PRE_RUN, self.pre_run_handler)
@@ -74,7 +75,7 @@ class BreakpointManager(object):
     # @retval True Breakpoint was set.
     # @retval False Breakpoint could not be set.
     def set_breakpoint(self, addr, type=Target.BREAKPOINT_AUTO):
-        logging.debug("set bkpt type %d at 0x%x", type, addr)
+        self._log.debug("set bkpt type %d at 0x%x", type, addr)
 
         # Clear Thumb bit in case it is set.
         addr = addr & ~1
@@ -106,7 +107,7 @@ class BreakpointManager(object):
     ## @brief Remove a breakpoint at a specific location.
     def remove_breakpoint(self, addr):
         try:
-            logging.debug("remove bkpt at 0x%x", addr)
+            self._log.debug("remove bkpt at 0x%x", addr)
 
             # Clear Thumb bit in case it is set.
             addr = addr & ~1
@@ -114,7 +115,7 @@ class BreakpointManager(object):
             # Remove bp from dict.
             del self._updated_breakpoints[addr]
         except KeyError:
-            logging.debug("Tried to remove breakpoint 0x%08x that wasn't set" % addr)
+            self._log.debug("Tried to remove breakpoint 0x%08x that wasn't set" % addr)
 
     ##
     # @brief Compute added and removed breakpoints since last flush.
@@ -176,38 +177,38 @@ class BreakpointManager(object):
                 elif is_flash:
                     type = Target.BREAKPOINT_FLASH
                 else:
-                    logging.debug("unable to set bp because no hw bp available")
+                    self._log.debug("unable to set bp because no hw bp available")
                     return None
             else:
                 type = Target.BREAKPOINT_HW
 
-            logging.debug("using type %d for auto bp", type)
+            self._log.debug("using type %d for auto bp", type)
 
         # Can't use hw bp above 0x2000_0000.
         if (type == Target.BREAKPOINT_HW) and not in_hw_bkpt_range:
             if is_ram:
-                logging.debug("using sw bp instead because of unsupported addr")
+                self._log.debug("using sw bp instead because of unsupported addr")
                 type = Target.BREAKPOINT_SW
             elif is_flash and self._flash_bp:
-                logging.debug("using flash bp instead because of unsupported addr")
+                self._log.debug("using flash bp instead because of unsupported addr")
                 type = Target.BREAKPOINT_FLASH
             else:
-                logging.debug("could not fallback to software breakpoint")
+                self._log.debug("could not fallback to software breakpoint")
                 return None
 
         # Revert to hw or flash bp if region is flash.
         if is_flash:
             if (not haveHwBp) and self._flash_bp:
-                logging.debug("using flash bp because no more hw bps are available")
+                self._log.debug("using flash bp because no more hw bps are available")
                 type = Target.BREAKPOINT_FLASH
             elif in_hw_bkpt_range and haveHwBp:
-                logging.debug("using hw bp instead because addr is flash")
+                self._log.debug("using hw bp instead because addr is flash")
                 type = Target.BREAKPOINT_HW
             else:
-                logging.debug("could not fallback to hardware breakpoint")
+                self._log.debug("could not fallback to hardware breakpoint")
                 return None
 
-        logging.debug("selected bkpt type %d for addr 0x%x", type, bp.addr)
+        self._log.debug("selected bkpt type %d for addr 0x%x", type, bp.addr)
         return type
 
     def flush(self, isStep=False):
@@ -216,7 +217,7 @@ class BreakpointManager(object):
             self._ignore_notifications = True
 
             added, removed = self._get_updated_breakpoints()
-            logging.debug("bpmgr: added=%s removed=%s", added, removed)
+            self._log.debug("bpmgr: added=%s removed=%s", added, removed)
 
             # Handle removed breakpoints first by asking the providers to remove them.
             for bp in removed:
@@ -246,7 +247,7 @@ class BreakpointManager(object):
                     self._breakpoints[bp.addr] = bp
 
             # Update breakpoint lists.
-            logging.debug("bpmgr: bps after flush=%s", self._breakpoints)
+            self._log.debug("bpmgr: bps after flush=%s", self._breakpoints)
             self._updated_breakpoints = copy(self._breakpoints)
 
             # Flush all providers.

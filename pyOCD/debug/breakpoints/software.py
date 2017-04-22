@@ -33,6 +33,7 @@ class SoftwareBreakpointProvider(BreakpointProvider):
         super(SoftwareBreakpointProvider, self).__init__()
         self._core = core
         self._breakpoints = {}
+        self._log = logging.getLogger('breakpoint.sw')
 
     def init(self):
         pass
@@ -71,7 +72,7 @@ class SoftwareBreakpointProvider(BreakpointProvider):
             self._breakpoints[addr] = bp
             return bp
         except DAPAccess.TransferError:
-            logging.debug("Failed to set sw bp at 0x%x" % addr)
+            self._log.debug("Failed to set sw bp at 0x%x" % addr)
             return None
 
     def remove_breakpoint(self, bp):
@@ -84,7 +85,7 @@ class SoftwareBreakpointProvider(BreakpointProvider):
             # Remove from our list.
             del self._breakpoints[bp.addr]
         except DAPAccess.TransferError:
-            logging.debug("Failed to remove sw bp at 0x%x" % bp.addr)
+            self._log.debug("Failed to remove sw bp at 0x%x" % bp.addr)
 
     def filter_memory(self, addr, size, data):
         for bp in self._breakpoints.values():

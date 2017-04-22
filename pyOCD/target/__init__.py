@@ -27,15 +27,20 @@ import target_MKL27Z256xxx4
 import target_MKL28Z512xxx7
 import target_MKL43Z256xxx4
 import target_MKL46Z256xxx4
+import target_MKL82Z128xxx7
 import target_MKV10Z128xxx7
 import target_MKV11Z128xxx7
 import target_MKW01Z128xxx4
 import target_MKW40Z160xxx4
+import target_MKW41Z512xxx4
+import target_MK22FN1M0Axxx12
 import target_MK22FN512xxx12
+import target_MK28FN2M0xxx15
 import target_MK64FN1M0xxx12
 import target_MK66FN2M0xxx18
 import target_MK82FN256xxx15
 import target_MK20DX128xxx5
+import target_K32W042S1M2xxx
 import target_lpc800
 import target_LPC11U24FBD64_401
 import target_LPC1768
@@ -67,15 +72,20 @@ TARGET = {
           'kl28z': target_MKL28Z512xxx7.KL28x,
           'kl43z4': target_MKL43Z256xxx4.KL43Z4,
           'kl46z': target_MKL46Z256xxx4.KL46Z,
+          'kl82z7': target_MKL82Z128xxx7.KL82Z7,
           'kv10z7': target_MKV10Z128xxx7.KV10Z7,
           'kv11z7': target_MKV11Z128xxx7.KV11Z7,
           'kw01z4': target_MKW01Z128xxx4.KW01Z4,
           'kw40z4': target_MKW40Z160xxx4.KW40Z4,
+          'kw41z4': target_MKW41Z512xxx4.KW41Z4,
           'k20d50m': target_MK20DX128xxx5.K20D50M,
+          'k22fa12': target_MK22FN1M0Axxx12.K22FA12,
           'k22f': target_MK22FN512xxx12.K22F,
+          'k28f15': target_MK28FN2M0xxx15.K28F15,
           'k64f': target_MK64FN1M0xxx12.K64F,
           'k66f18': target_MK66FN2M0xxx18.K66F18,
           'k82f25615': target_MK82FN256xxx15.K82F25615,
+          'k32w042s': target_K32W042S1M2xxx.K32W042S,
           'lpc800': target_lpc800.LPC800,
           'lpc11u24': target_LPC11U24FBD64_401.LPC11U24,
           'lpc1768': target_LPC1768.LPC1768,
@@ -108,15 +118,20 @@ FLASH = {
          'kl28z': target_MKL28Z512xxx7.Flash_kl28z,
          'kl43z4': target_MKL43Z256xxx4.Flash_kl43z4,
          'kl46z': target_MKL46Z256xxx4.Flash_kl46z,
+         'kl82z7': target_MKL82Z128xxx7.Flash_mkl82z7,
          'kv10z7': target_MKV10Z128xxx7.Flash_kv10z7,
          'kv11z7': target_MKV11Z128xxx7.Flash_kv11z7,
          'kw01z4': target_MKW01Z128xxx4.Flash_kw01z4,
          'kw40z4': target_MKW40Z160xxx4.Flash_kw40z4,
+         'kw41z4': target_MKW41Z512xxx4.Flash_kw41z4,
          'k20d50m': target_MK20DX128xxx5.Flash_k20d50m,
+         'k22fa12': target_MK22FN1M0Axxx12.Flash_k22fa12,
          'k22f': target_MK22FN512xxx12.Flash_k22f,
+         'k28f15': target_MK28FN2M0xxx15.Flash_k28f15,
          'k64f': target_MK64FN1M0xxx12.Flash_k64f,
          'k66f18': target_MK66FN2M0xxx18.Flash_k66f18,
          'k82f25615': target_MK82FN256xxx15.Flash_k82f25615,
+         'k32w042s': target_K32W042S1M2xxx.Flash_k32w042s,
          'lpc800': target_lpc800.Flash_lpc800,
          'lpc11u24': target_LPC11U24FBD64_401.Flash_lpc11u24,
          'lpc1768':  target_LPC1768.Flash_lpc1768,

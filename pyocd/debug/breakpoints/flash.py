@@ -1,6 +1,6 @@
 """
  mbed CMSIS-DAP debugger
- Copyright (c) 2015 ARM Limited
+ Copyright (c) 2015,2019 ARM Limited
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import logging
 from copy import copy
 from collections import namedtuple
 
+LOG = logging.getLogger(__name__)
+
 ENABLE_VERIFY = False # Verify pages after writes.
 
 OP_ADD = 1 # Add breakpoint to page.
@@ -45,7 +47,6 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         super(FlashBreakpointProvider, self).__init__(core)
         self._flash = core.flash
         self._analyzer_supported = self._flash.use_analyzer
-        self._log = logging.getLogger('flashbp')
         self._updated_breakpoints = {}
         self._ignore_notifications = False
         self._enable_filter = True
@@ -59,19 +60,19 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
 
     def _save_state(self, maxPageSize):
         self._saved_regs = self._core.readCoreRegistersRaw(self.REGS_TO_SAVE)
-        self._log.debug("Saved registers: [%s]", " ".join("%08x" % r for r in self._saved_regs))
+        LOG.debug("Saved registers: [%s]", " ".join("%08x" % r for r in self._saved_regs))
 
         start = self._flash.flash_algo['load_address']
         count = self._flash.begin_stack - start
-        self._log.debug("Saving algo region [%x+%x]", start, count)
+        LOG.debug("Saving algo region [%x+%x]", start, count)
         self._saved_algo = self._core.readBlockMemoryUnaligned8(start, count)
 
         start = self._flash.begin_data
-        self._log.debug("Saving buffer region [%x+%x]", start, maxPageSize)
+        LOG.debug("Saving buffer region [%x+%x]", start, maxPageSize)
         self._saved_buffer = self._core.readBlockMemoryUnaligned8(start, maxPageSize)
 
     def _restore_state(self):
-        self._log.debug("Restoring state")
+        LOG.debug("Restoring state")
         self._core.writeBlockMemoryUnaligned8(self._flash.flash_algo['load_address'], self._saved_algo)
         self._core.writeBlockMemoryUnaligned8(self._flash.begin_data, self._saved_buffer)
         self._core.writeCoreRegistersRaw(self.REGS_TO_SAVE, self._saved_regs)
@@ -90,7 +91,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         self._flash.use_analyzer = False
 
         # Init flash algo.
-        self._log.debug("Initing flash algo")
+        LOG.debug("Initing flash algo")
         self._flash.init(reset=False)
 
     def _finish_page_updates(self):
@@ -106,7 +107,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         assert self._core.memory_map.getRegionForAddress(addr).isFlash
         assert (addr & 1) == 0
 
-        self._log.debug("Inserting flash bp @ %x", addr)
+        LOG.debug("Inserting flash bp @ %x", addr)
 
         if self._updated_breakpoints.has_key(addr):
             raise RuntimeError("trying to add a breakpoint that already exists (address 0x%08x)", addr)
@@ -128,7 +129,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
     def remove_breakpoint(self, bp):
         assert bp is not None and isinstance(bp, Breakpoint)
 
-        self._log.debug("Removing flash bp @ %x", bp.addr)
+        LOG.debug("Removing flash bp @ %x", bp.addr)
 
         if self._updated_breakpoints.has_key(bp.addr):
             del self._updated_breakpoints[bp.addr]
@@ -162,7 +163,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         try:
             # Read original page data.
             start = page.info.base_addr
-            self._log.debug("Reading original page [%x+%x]", start, page.info.size)
+            LOG.debug("Reading original page [%x+%x]", start, page.info.size)
             pageData = self._core.readBlockMemoryUnaligned8(start, page.info.size)
 
             for op in page.ops:
@@ -172,29 +173,29 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
                     instr = self.BKPT_INSTR
                 elif op.op == OP_REMOVE:
                     instr = op.bp.original_instr
-                self._log.debug("Changing [%x:%x] from 0x%02x to 0x%02x", start + offset, start + offset + 2,
+                LOG.debug("Changing [%x:%x] from 0x%02x to 0x%02x", start + offset, start + offset + 2,
                     conversion.byteListToU16leList(pageData[offset:offset+2])[0], instr)
                 pageData[offset:offset+2] = conversion.u16leListToByteList([instr])
 
             # Erase the page.
-            self._log.debug("Erasing page @ %x", start)
+            LOG.debug("Erasing page @ %x", start)
             self._flash.erasePage(start)
 
             # Program the page.
-            self._log.debug("Programming page @ %x", start)
+            LOG.debug("Programming page @ %x", start)
             self._flash.programPage(start, pageData)
 
             # Verify.
             if ENABLE_VERIFY:
                 verifyData = self._core.readBlockMemoryUnaligned8(start, page.info.size)
                 if verifyData != pageData:
-                    self._log.error("Verify failed")
+                    LOG.error("Verify failed")
                     for i in range(len(verifyData)):
                         if verifyData[i] != pageData[i]:
-                            self._log.error("Mismatch at byte %d: expected=0x%02x actual=0x%02x",
+                            LOG.error("Mismatch at byte %d: expected=0x%02x actual=0x%02x",
                                 i, pageData[i], verifyData[i])
                 else:
-                    self._log.debug("Page verified")
+                    LOG.debug("Page verified")
         except DAPAccess.TransferError:
             logging.debug("Failed to update flash bps on page at 0x%x" % page.info.base_addr)
 
@@ -208,7 +209,7 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
             self._enable_filter = False
 
             pages = self._get_page_updates()
-            self._log.debug("flash bp updates: %s", repr(pages))
+            LOG.debug("flash bp updates: %s", repr(pages))
 
             if pages:
                 # Determine the largest page size, in case flash pages have different sizes as on some devices.

@@ -50,10 +50,6 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         self._ignore_notifications = False
         self._enable_filter = True
 
-        # Subscribe to some notifications.
-        self._core.subscribe(Target.EVENT_PRE_RUN, self.pre_run_handler)
-        self._core.subscribe(Target.EVENT_PRE_DISCONNECT, self.pre_disconnect_handler)
-
     def bp_type(self):
         return Target.BREAKPOINT_FLASH
 
@@ -234,11 +230,4 @@ class FlashBreakpointProvider(SoftwareBreakpointProvider):
         finally:
             self._ignore_notifications = False
             self._enable_filter = True
-
-    def pre_run_handler(self, notification):
-        if not self._ignore_notifications:
-            self.flush()
-
-    def pre_disconnect_handler(self, notification):
-        pass
 

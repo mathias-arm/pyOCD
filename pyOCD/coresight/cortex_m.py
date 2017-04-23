@@ -322,7 +322,7 @@ class CortexM(Target):
         ]
 
     def __init__(self, rootTarget, dp, ap, memoryMap=None, core_num=0):
-        super(CortexM, self).__init__(rootTarget .link, memoryMap)
+        super(CortexM, self).__init__(rootTarget.link, memoryMap)
 
         self.root_target = rootTarget
         self.arch = 0
@@ -767,7 +767,7 @@ class CortexM(Target):
                 raise ValueError("unknown reg: %d" % reg)
             elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
                 raise ValueError("attempt to read FPU register without FPU")
-            elif ((reg <= -100) and (not self.has_fpu_double))
+            elif ((reg <= -100) and (not self.has_fpu_double)):
                 raise ValueError("attempt to read double-precision FPU register without FPv5")
 
         # Begin all reads and writes
@@ -841,7 +841,7 @@ class CortexM(Target):
                 raise ValueError("unknown reg: %d" % reg)
             elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
                 raise ValueError("attempt to write FPU register without FPU")
-            elif ((reg <= -100) and (not self.has_fpu_double))
+            elif ((reg <= -100) and (not self.has_fpu_double)):
                 raise ValueError("attempt to write double-precision FPU register without FPv5")
 
         # Read special register if it is present in the list

@@ -124,6 +124,9 @@ class Target(Notifier):
     def resume(self):
         raise NotImplementedError()
 
+    def massErase(self):
+        raise NotImplementedError()
+
     def writeMemory(self, addr, value, transfer_size=32):
         raise NotImplementedError()
 

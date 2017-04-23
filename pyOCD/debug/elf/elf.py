@@ -15,7 +15,7 @@
  limitations under the License.
 """
 
-from ...target.memory_map import MemoryRange
+from ...core.memory_map import MemoryRange
 from elftools.elf.elffile import ELFFile
 from elftools.elf.constants import SH_FLAGS
 import logging

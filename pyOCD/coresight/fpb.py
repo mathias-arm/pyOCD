@@ -116,7 +116,7 @@ class FPB(BreakpointProvider):
                     comp = addr & 0x1ffffffc | bp_match | 1
                 elif self.fp_rev == 2:
                     comp = (addr & 0xfffffffe) | 1
-                self.writeMemory(bp.comp_register_addr, comp)
+                self.ap.writeMemory(bp.comp_register_addr, comp)
                 logging.debug("BP: wrote 0x%08x to comp @ 0x%08x", comp, bp.comp_register_addr)
                 bp.addr = addr
                 self.num_hw_breakpoint_used += 1

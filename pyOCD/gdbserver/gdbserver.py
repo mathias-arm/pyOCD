@@ -23,6 +23,7 @@ from gdb_socket import GDBSocket
 from gdb_websocket import GDBWebSocket
 from syscall import GDBSyscallIOHandler
 from ..debug import semihost
+from ..debug.cache import MemoryAccessError
 from .context_facade import GDBDebugContextFacade
 import signals
 import logging, threading, socket
@@ -798,6 +799,9 @@ class GDBServer(threading.Thread):
         except DAPAccess.TransferError:
             logging.debug("getMemory failed at 0x%x" % addr)
             val = 'E01' #EPERM
+        except MemoryAccessError as e:
+            logging.debug("getMemory failed at 0x%x: %s", addr, str(e))
+            val = 'E01' #EPERM
         return self.createRSPPacket(val)
 
     def writeMemoryHex(self, data):
@@ -822,6 +826,9 @@ class GDBServer(threading.Thread):
         except DAPAccess.TransferError:
             logging.debug("writeMemory failed at 0x%x" % addr)
             resp = 'E01' #EPERM
+        except MemoryAccessError as e:
+            logging.debug("getMemory failed at 0x%x: %s", addr, str(e))
+            val = 'E01' #EPERM
 
         return self.createRSPPacket(resp)
 
@@ -852,6 +859,9 @@ class GDBServer(threading.Thread):
         except DAPAccess.TransferError:
             logging.debug("writeMemory failed at 0x%x" % addr)
             resp = 'E01' #EPERM
+        except MemoryAccessError as e:
+            logging.debug("getMemory failed at 0x%x: %s", addr, str(e))
+            val = 'E01' #EPERM
 
         return self.createRSPPacket(resp)
 

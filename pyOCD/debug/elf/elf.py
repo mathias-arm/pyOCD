@@ -16,6 +16,7 @@
 """
 
 from ...core.memory_map import MemoryRange
+from .decoder import (ElfSymbolDecoder, DwarfAddressDecoder)
 from elftools.elf.elffile import ELFFile
 from elftools.elf.constants import SH_FLAGS
 import logging
@@ -87,6 +88,9 @@ class ELFBinaryFile(object):
         else:
             self._elf = ELFFile(elf)
         self._memory_map = memory_map
+
+        self._symbol_decoder = None
+        self._address_decoder = None
 
         self._extract_sections()
         self._compute_regions()
@@ -169,6 +173,18 @@ class ELFBinaryFile(object):
     @property
     def unused_ranges(self):
         return self._unused
+
+    @property
+    def symbol_decoder(self):
+        if self._symbol_decoder is None:
+            self._symbol_decoder = ElfSymbolDecoder(self._elf)
+        return self._symbol_decoder
+
+    @property
+    def address_decoder(self):
+        if self._address_decoder is None:
+            self._address_decoder = DwarfAddressDecoder(self._elf)
+        return self._address_decoder
 
 
 

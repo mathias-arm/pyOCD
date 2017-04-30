@@ -18,6 +18,7 @@
 import sys
 import os
 from elftools.elf.elffile import ELFFile
+from elftools.dwarf.constants import DW_LNE_set_address
 from intervaltree import IntervalTree
 from collections import namedtuple
 from itertools import islice, imap
@@ -61,6 +62,11 @@ class ElfSymbolDecoder(object):
 
             sym_value = symbol.entry['st_value']
             sym_size = symbol.entry['st_size']
+
+            # Cannot put an empty interval into the tree, so ensure symbols have
+            # at least a size of 1.
+            if sym_size == 0:
+                sym_size = 1
 
             syminfo = SymbolInfo(name=symbol.name, address=sym_value, size=sym_size, type=sym_type)
 
@@ -128,6 +134,15 @@ class DwarfAddressDecoder(object):
                 low_pc = prog.attributes['DW_AT_low_pc'].value
                 high_pc = prog.attributes['DW_AT_high_pc'].value
 
+                # Skip subprograms excluded from the link.
+                if low_pc == 0:
+                    continue
+
+                # If high_pc is not explicitly an address, then it's an offset from the
+                # low_pc value.
+                if prog.attributes['DW_AT_high_pc'].form != 'DW_FORM_addr':
+                    high_pc = low_pc + high_pc
+
                 fninfo = FunctionInfo(name=name, subprogram=prog, low_pc=low_pc, high_pc=high_pc)
 
                 self.function_tree.addi(low_pc, high_pc, fninfo)
@@ -139,20 +154,52 @@ class DwarfAddressDecoder(object):
         for cu in self.dwarfinfo.iter_CUs():
             lineprog = self.dwarfinfo.line_program_for_CU(cu)
             prevstate = None
+            skipThisSequence = False
             for entry in lineprog.get_entries():
+                # Look for a DW_LNE_set_address command with a 0 address. This indicates
+                # code that is not actually included in the link.
+                #
+                # TODO: find a better way to determine the code is really not present and
+                #       doesn't have a real address of 0
+                if entry.is_extended and entry.command == DW_LNE_set_address \
+                        and len(entry.args) == 1 and entry.args[0] == 0:
+                    skipThisSequence = True
+
                 # We're interested in those entries where a new state is assigned
                 if entry.state is None:
                     continue
 
-                # Looking for a range of addresses in two consecutive states that
-                # contain the required address.
-                if prevstate: # and prevstate.address <= address < entry.state.address:
+                # Looking for a range of addresses in two consecutive states.
+                if prevstate and not skipThisSequence:
                     fileinfo = lineprog['file_entry'][prevstate.file - 1]
                     filename = fileinfo.name
                     dirname = lineprog['include_directory'][fileinfo.dir_index - 1]
                     info = LineInfo(cu=cu, filename=filename, dirname=dirname, line=prevstate.line)
-                    self.line_tree.addi(prevstate.address, entry.state.address, info)
-                prevstate = entry.state
+                    fromAddr = prevstate.address
+                    toAddr = entry.state.address
+                    try:
+                        if fromAddr != 0 and toAddr != 0:
+                            if fromAddr == toAddr:
+                                toAddr += 1
+                            self.line_tree.addi(fromAddr, toAddr, info)
+                    except:
+                        logging.debug("Problematic lineprog:")
+                        self._dump_lineprog(lineprog)
+                        raise
+
+                if entry.state.end_sequence:
+                    prevstate = None
+                    skipThisSequence = False
+                else:
+                    prevstate = entry.state
+
+    def _dump_lineprog(self, lineprog):
+        for i, e in enumerate(lineprog.get_entries()):
+            s = e.state
+            if s is None:
+                logging.debug("%d: cmd=%d ext=%d args=%s", i, e.command, int(e.is_extended), repr(e.args))
+            else:
+                logging.debug("%d: %06x %4d stmt=%1d block=%1d end=%d file=[%d]%s", i, s.address, s.line, s.is_stmt, int(s.basic_block), int(s.end_sequence), s.file, lineprog['file_entry'][s.file-1].name)
 
     def dump_subprograms(self):
         for prog in self.subprograms:

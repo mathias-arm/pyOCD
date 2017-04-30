@@ -246,6 +246,12 @@ COMMAND_INFO = {
             'help' : "Set an option value",
             'extra_help' : "Available info names: vc, vectorcatch.",
             },
+        'where' : {
+            'aliases' : [],
+            'args' : "",
+            'help' : "Show file and line for current PC.",
+            'extra_help' : "An ELF file must have been specified with the --elf option.",
+            },
         }
 
 INFO_HELP = {
@@ -479,6 +485,7 @@ class PyOCDTool(object):
                 'show' :    self.handle_show,
                 'set' :     self.handle_set,
                 'help' :    self.handle_help,
+                'where' :   self.handle_where,
                 '?' :       self.handle_help,
             }
         self.info_list = {
@@ -510,6 +517,7 @@ class PyOCDTool(object):
         parser.add_argument('-k', "--clock", metavar='KHZ', default=DEFAULT_CLOCK_FREQ_KHZ, type=int, help="Set SWD speed in kHz. (Default 1 MHz.)")
         parser.add_argument('-b', "--board", action='store', metavar='ID', help="Use the specified board. ")
         parser.add_argument('-t', "--target", action='store', metavar='TARGET', help="Override target.")
+        parser.add_argument('-e', "--elf", metavar="PATH", help="Optionally specify ELF file being debugged.")
         parser.add_argument("-d", "--debug", dest="debug_level", choices=debug_levels, default='warning', help="Set the level of system logging output. Supported choices are: " + ", ".join(debug_levels), metavar="LEVEL")
         parser.add_argument("cmd", nargs='?', default=None, help="Command")
         parser.add_argument("args", nargs='*', help="Arguments for the command.")
@@ -570,6 +578,13 @@ class PyOCDTool(object):
             self.target = self.board.target
             self.link = self.board.link
             self.flash = self.board.flash
+
+            # Set elf file if provided.
+            if self.args.elf:
+                self.target.elf = self.args.elf
+                self.elf = self.target.elf
+            else:
+                self.elf = None
 
             self.svd_device = self.target.svd_device
             self.peripherals = {}
@@ -979,6 +994,7 @@ class PyOCDTool(object):
                     'target' : self.target,
                     'link' : self.link,
                     'flash' : self.flash,
+                    'elf' : self.elf,
                 }
             result = eval(args, globals(), env)
             if result is not None:
@@ -1126,6 +1142,16 @@ class PyOCDTool(object):
                     print info['help']
                     if info.has_key('extra_help'):
                         print info['extra_help']
+
+    def handle_where(self, args):
+        if self.elf is None:
+            print "No ELF available"
+            return
+        pc = self.target.readCoreRegister('pc')
+        lineInfo = self.elf.address_decoder.get_line_for_address(pc)
+        fnInfo = self.elf.address_decoder.get_function_for_address(pc)
+        path = os.path.join(lineInfo.dirname, lineInfo.filename)
+        print "{addr:#10x} : {fn} : {path}:{line}".format(addr=pc, fn=fnInfo.name, path=path, line=lineInfo.line)
 
     def list_commands(self):
         cmds = sorted(COMMAND_INFO.keys())

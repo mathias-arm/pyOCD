@@ -379,7 +379,7 @@ class CortexM(Target):
             self.flash_bp.init()
             self.bp_manager.add_provider(self.flash_bp, Target.BREAKPOINT_FLASH)
 
-    def disconnect(self):
+    def disconnect(self, resume=True):
         # Remove breakpoints.
         self.bp_manager.remove_all_breakpoints()
 
@@ -387,7 +387,9 @@ class CortexM(Target):
         self.write32(CortexM.DEMCR, 0)
 
         # Disable core debug.
-        self.write32(CortexM.DHCSR, CortexM.DBGKEY | 0x0000)
+        if resume:
+            self.resume()
+            self.write32(CortexM.DHCSR, CortexM.DBGKEY | 0x0000)
 
     def buildTargetXML(self):
         # Build register_list and targetXML

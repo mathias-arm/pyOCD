@@ -92,6 +92,7 @@ class CoreSightTarget(Target):
 
     def add_core(self, core):
         core.setFlash(self.flash)
+        core.setHaltOnConnect(self.halt_on_connect)
         self.cores[core.core_number] = core
         self.cores[core.core_number].setTargetContext(CachingDebugContext(DebugContext(core)))
         self._root_contexts[core.core_number] = None
@@ -117,10 +118,10 @@ class CoreSightTarget(Target):
 
         self.notify(Notification(event=Target.EVENT_POST_CONNECT, source=self))
 
-    def disconnect(self):
+    def disconnect(self, resume=True):
         self.notify(Notification(event=Target.EVENT_PRE_DISCONNECT, source=self))
         for core in self.cores.values():
-            core.disconnect()
+            core.disconnect(resume)
         self.dp.power_down_debug()
 
     def readIDCode(self):

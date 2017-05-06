@@ -72,6 +72,7 @@ class CoreSightTarget(Target):
         self.aps[ap.ap_num] = ap
 
     def add_core(self, core):
+        core.setHaltOnConnect(self.halt_on_connect)
         self.cores[core.core_number] = core
         self.cores[core.core_number].setTargetContext(DebugContext(core))
         self._root_contexts[core.core_number] = None
@@ -95,9 +96,9 @@ class CoreSightTarget(Target):
             core0.init()
         self.add_core(core0)
 
-    def disconnect(self):
+    def disconnect(self, resume=True):
         for core in self.cores.values():
-            core.disconnect()
+            core.disconnect(resume)
         self.dp.power_down_debug()
 
     def readIDCode(self):

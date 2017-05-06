@@ -79,7 +79,7 @@ class Target(object):
     def init(self):
         raise NotImplementedError()
 
-    def disconnect(self):
+    def disconnect(self, resume=True):
         pass
 
     def info(self, request):

@@ -52,21 +52,14 @@ class Board(object):
     def uninit(self, resume=True):
         """
         Uninitialize the board: link and target.
-        This function resumes the target
         """
         if self.closed:
             return
         self.closed = True
 
         logging.debug("uninit board %s", self)
-        if resume:
-            try:
-                self.target.resume()
-            except:
-                logging.error("target exception during uninit:")
-                traceback.print_exc()
         try:
-            self.target.disconnect()
+            self.target.disconnect(resume)
         except:
             logging.error("link exception during target disconnect:")
             traceback.print_exc()

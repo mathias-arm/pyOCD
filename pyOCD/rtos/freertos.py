@@ -17,6 +17,7 @@
 
 from .provider import (TargetThread, ThreadProvider)
 from .common import (read_c_string, HandlerModeThread)
+from ..core.target import Target
 from ..debug.context import DebugContext
 from ..coresight.cortex_m import CORE_REGISTER
 from pyOCD.pyDAPAccess import DAPAccess
@@ -327,10 +328,12 @@ class FreeRTOSThreadProvider(ThreadProvider):
 
     def __init__(self, target):
         super(FreeRTOSThreadProvider, self).__init__(target)
-        self._target_context = self._target.getTargetContext()
         self._symbols = None
         self._total_priorities = 0
         self._threads = {}
+
+        self._target.root_target.subscribe(Target.EVENT_POST_FLASH_PROGRAM, self.event_handler)
+        self._target.subscribe(Target.EVENT_POST_RESET, self.event_handler)
 
     def init(self, symbolProvider):
         # Lookup required symbols.
@@ -373,6 +376,14 @@ class FreeRTOSThreadProvider(ThreadProvider):
         log.debug("FreeRTOS: number of priorities is %d", self._total_priorities)
 
         return True
+
+    def invalidate(self):
+        self._threads = {}
+
+    def event_handler(self, notification):
+        # Invalidate threads list if flash is reprogrammed.
+        log.info("FreeRTOS: invalidating threads list: %s" % (repr(notification)))
+        self.invalidate();
 
     def _build_thread_list(self):
         newThreads = {}
@@ -491,9 +502,6 @@ class FreeRTOSThreadProvider(ThreadProvider):
         if not self.is_enabled:
             return None
         return self._target_context.read32(self._symbols['pxCurrentTCB'])
-
-    def get_ipsr(self):
-        return self._target_context.readCoreRegister('xpsr') & 0xff
 
     def get_is_running(self):
         if self._symbols is None:

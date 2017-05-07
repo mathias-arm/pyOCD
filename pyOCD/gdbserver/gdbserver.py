@@ -798,19 +798,23 @@ class GDBServer(threading.Thread):
                 # Reset state on 0.0
                 if progress == 0.0:
                     print_progress.done = False
+                    print_progress.last = 0
+                    sys.stdout.write('[' + '---|' * 9 + '----]\r\n[')
+                    sys.stdout.flush()
 
                 # print progress bar
                 if not print_progress.done:
-                    sys.stdout.write('\r')
-                    i = int(progress * 20.0)
-                    sys.stdout.write("[%-20s] %3d%%" % ('=' * i, round(progress * 100)))
+                    i = int(progress * 40.0)
+                    delta = i - print_progress.last
+                    sys.stdout.write('=' * delta)
                     sys.stdout.flush()
+                    print_progress.last = i
 
                 # Finish on 1.0
                 if progress >= 1.0:
                     if not print_progress.done:
                         print_progress.done = True
-                        sys.stdout.write("\r\n")
+                        sys.stdout.write("]\r\n")
                         sys.stdout.flush()
 
             if self.hide_programming_progress:

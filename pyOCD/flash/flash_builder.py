@@ -261,7 +261,22 @@ class FlashBuilder(object):
         self.perf.program_time = program_finish - program_start
         self.perf.program_type = flash_operation
 
-        logging.info("Programmed %d bytes (%d pages) at %.02f kB/s", program_byte_count, len(self.page_list), ((program_byte_count/1024) / self.perf.program_time))
+        # Count same pages.
+        samePages = 0
+        for page in self.page_list:
+            if page.same is not None and page.same:
+                samePages += 1
+
+        if samePages == len(self.page_list):
+            logging.info("Skipped programming %d unchanged pages (%.02f s to verify)",
+                len(self.page_list),
+                self.perf.program_time)
+        else:
+            logging.info("Programmed %d bytes (%d pages) at %.02f kB/s (%d pages unchanged)",
+                program_byte_count,
+                len(self.page_list),
+                ((program_byte_count/1024) / self.perf.program_time),
+                samePages)
 
         # Send notification that we're done programming flash.
         self.flash.target.notify(Notification(event=Target.EVENT_POST_FLASH_PROGRAM, source=self))

@@ -19,6 +19,7 @@ from .target import Target
 from ..coresight import (dap, ap, cortex_m)
 from ..debug.svd import (SVDFile, SVDLoader)
 from ..debug.context import DebugContext
+from ..utility.notification import Notification
 import threading
 import logging
 from xml.etree.ElementTree import (Element, SubElement, tostring)
@@ -29,6 +30,7 @@ class CoreSightTarget(Target):
 
     def __init__(self, link, memoryMap=None):
         super(CoreSightTarget, self).__init__(link, memoryMap)
+        self.root_target = self
         self.part_number = self.__class__.__name__
         self.cores = {}
         self.aps = {}
@@ -90,12 +92,15 @@ class CoreSightTarget(Target):
         self.add_ap(ap0)
 
         # Create CortexM core.
-        core0 = cortex_m.CortexM(self.link, self.dp, self.aps[0], self.memory_map)
+        core0 = cortex_m.CortexM(self, self.dp, self.aps[0], self.memory_map)
         if bus_accessible:
             core0.init()
         self.add_core(core0)
 
+        self.notify(Notification(event=Target.EVENT_POST_CONNECT, source=self))
+
     def disconnect(self):
+        self.notify(Notification(event=Target.EVENT_PRE_DISCONNECT, source=self))
         for core in self.cores.values():
             core.disconnect()
         self.dp.power_down_debug()

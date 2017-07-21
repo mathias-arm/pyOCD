@@ -192,7 +192,7 @@ class FlashRegion(MemoryRegion):
 ## @brief Device or peripheral memory.
 class DeviceRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, name='', isPoweredOnBoot=True):
-        super(RamRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
+        super(DeviceRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
             isBootMemory=False, isPoweredOnBoot=isPoweredOnBoot, isCacheable=False,
             invalidateCacheOnRun=True)
 
@@ -200,7 +200,7 @@ class DeviceRegion(MemoryRegion):
 class AliasRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, blocksize=0, name='', aliasOf=None, isBootMemory=False,
                 isPoweredOnBoot=True, isCacheable=True, invalidateCacheOnRun=True):
-        super(RamRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
+        super(AliasRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
             isBootMemory=isBootMemory, isPoweredOnBoot=isPoweredOnBoot, isCacheable=isCacheable,
             invalidateCacheOnRun=invalidateCacheOnRun)
         self._alias_reference = aliasOf

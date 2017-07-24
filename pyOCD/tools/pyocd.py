@@ -559,7 +559,7 @@ class PyOCDTool(object):
             # Connect to board.
             self.board = MbedBoard.chooseBoard(board_id=self.args.board, target_override=self.args.target, init_board=False, frequency=(self.args.clock * 1000))
             self.board.target.setAutoUnlock(False)
-            self.board.target.setHaltOnConnect(False)
+            self.board.target.setHaltOnConnect(self.args.halt)
             try:
                 if not self.args.no_init:
                     self.board.init()
@@ -591,10 +591,6 @@ class PyOCDTool(object):
             if self.svd_device:
                 for p in self.svd_device.peripherals:
                     self.peripherals[p.name.lower()] = p
-
-            # Halt if requested.
-            if self.args.halt:
-                self.handle_halt([])
 
             # Handle a device with flash security enabled.
             self.didErase = False

@@ -192,7 +192,7 @@ class FlashRegion(MemoryRegion):
 ## @brief Device or peripheral memory.
 class DeviceRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, name='', isPoweredOnBoot=True):
-        super(RamRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
+        super(DeviceRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
             isBootMemory=False, isPoweredOnBoot=isPoweredOnBoot, isCacheable=False,
             invalidateCacheOnRun=True)
 
@@ -200,7 +200,7 @@ class DeviceRegion(MemoryRegion):
 class AliasRegion(MemoryRegion):
     def __init__(self, start=0, end=0, length=0, blocksize=0, name='', aliasOf=None, isBootMemory=False,
                 isPoweredOnBoot=True, isCacheable=True, invalidateCacheOnRun=True):
-        super(RamRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
+        super(AliasRegion, self).__init__(type='ram', start=start, end=end, length=length, name=name,
             isBootMemory=isBootMemory, isPoweredOnBoot=isPoweredOnBoot, isCacheable=isCacheable,
             invalidateCacheOnRun=invalidateCacheOnRun)
         self._alias_reference = aliasOf
@@ -265,10 +265,10 @@ class MemoryMap(object):
     def getXML(self):
         root = ElementTree.Element('memory-map')
         for r in self._regions:
-            mem = ElementTree.SubElement(root, 'memory', type=r.type, start=hex(r.start), length=hex(r.length))
+            mem = ElementTree.SubElement(root, 'memory', type=r.type, start=hex(r.start).rstrip("L"), length=hex(r.length).rstrip("L"))
             if r.isFlash:
                 prop = ElementTree.SubElement(mem, 'property', name='blocksize')
-                prop.text = hex(r.blocksize)
+                prop.text = hex(r.blocksize).rstrip("L")
         return MAP_XML_HEADER + ElementTree.tostring(root)
 
     ## @brief Enable iteration over the memory map.

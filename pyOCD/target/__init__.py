@@ -31,6 +31,7 @@ import target_MKL82Z128xxx7
 import target_MKV10Z128xxx7
 import target_MKV11Z128xxx7
 import target_MKW01Z128xxx4
+import target_MKW36Z512xxx4
 import target_MKW40Z160xxx4
 import target_MKW41Z512xxx4
 import target_MK22FN1M0Axxx12
@@ -54,10 +55,12 @@ import target_max32600mbed
 import target_w7500
 import target_LPC1114FN28_102
 import target_LPC824M201JHI33
+import target_LPC54114J256BD64
 import target_ncs36510
 import target_LPC4088FBD144
 import target_lpc4088qsb
 import target_lpc4088dm
+import target_RTL8195AM
 
 TARGET = {
           'cortex_m': CoreSightTarget,
@@ -76,6 +79,7 @@ TARGET = {
           'kv10z7': target_MKV10Z128xxx7.KV10Z7,
           'kv11z7': target_MKV11Z128xxx7.KV11Z7,
           'kw01z4': target_MKW01Z128xxx4.KW01Z4,
+          'kw36z4': target_MKW36Z512xxx4.KW36Z4,
           'kw40z4': target_MKW40Z160xxx4.KW40Z4,
           'kw41z4': target_MKW41Z512xxx4.KW41Z4,
           'k20d50m': target_MK20DX128xxx5.K20D50M,
@@ -99,10 +103,12 @@ TARGET = {
           'w7500': target_w7500.W7500,
           'lpc11xx_32': target_LPC1114FN28_102.LPC11XX_32,
           'lpc824': target_LPC824M201JHI33.LPC824,
+          'lpc54114': target_LPC54114J256BD64.LPC54114,
           'lpc4088': target_LPC4088FBD144.LPC4088,
           'ncs36510': target_ncs36510.NCS36510,
           'lpc4088qsb': target_lpc4088qsb.LPC4088qsb,
           'lpc4088dm': target_lpc4088dm.LPC4088dm,
+          'rtl8195am': target_RTL8195AM.RTL8195AM,
          }
 
 FLASH = {
@@ -122,6 +128,7 @@ FLASH = {
          'kv10z7': target_MKV10Z128xxx7.Flash_kv10z7,
          'kv11z7': target_MKV11Z128xxx7.Flash_kv11z7,
          'kw01z4': target_MKW01Z128xxx4.Flash_kw01z4,
+         'kw36z4': target_MKW36Z512xxx4.Flash_kw36z4,
          'kw40z4': target_MKW40Z160xxx4.Flash_kw40z4,
          'kw41z4': target_MKW41Z512xxx4.Flash_kw41z4,
          'k20d50m': target_MK20DX128xxx5.Flash_k20d50m,
@@ -146,7 +153,9 @@ FLASH = {
          'lpc11xx_32': target_LPC1114FN28_102.Flash_lpc11xx_32,
          'lpc824': target_LPC824M201JHI33.Flash_lpc824,
          'lpc4088': target_LPC4088FBD144.Flash_lpc4088,
+         'lpc54114': target_LPC54114J256BD64.Flash_lpc54114,
          'ncs36510': target_ncs36510.Flash_ncs36510,
          'lpc4088qsb': target_lpc4088qsb.Flash_lpc4088qsb_dm,
          'lpc4088dm': target_lpc4088dm.Flash_lpc4088qsb_dm,
+         'rtl8195am': target_RTL8195AM.Flash_rtl8195am,
          }

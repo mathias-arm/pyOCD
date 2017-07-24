@@ -414,7 +414,7 @@ class CortexM(Target):
                 for reg in self.regs_float_double:
                     self.register_list.append(reg)
                     SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
-        self.targetXML = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "gdb-target.dtd">' + tostring(xml_root)
+        self.targetXML = b'<?xml version="1.0"?><!DOCTYPE feature SYSTEM "gdb-target.dtd">' + tostring(xml_root)
 
     ## @brief Read the CPUID register and determine core type.
     def readCoreType(self):
@@ -979,4 +979,3 @@ class CortexM(Target):
 
     def setTargetContext(self, context):
         self._target_context = context
-

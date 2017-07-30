@@ -275,6 +275,10 @@ INFO_HELP = {
             'aliases' : [],
             'help' : "General target information.",
             },
+        'nreset' : {
+            'aliases' : [],
+            'help' : "Current nRESET signal state.",
+            },
         }
 
 OPTION_HELP = {
@@ -494,6 +498,7 @@ class PyOCDTool(object):
                 'uid' :         self.handle_show_unique_id,
                 'cores' :       self.handle_show_cores,
                 'target' :      self.handle_show_target,
+                'nreset' :      self.handle_show_nreset,
             }
         self.option_list = {
                 'vector-catch' :        self.handle_set_vectorcatch,
@@ -990,6 +995,7 @@ class PyOCDTool(object):
                     'target' : self.target,
                     'link' : self.link,
                     'flash' : self.flash,
+                    'dp' : self.target.dp,
                     'elf' : self.elf,
                 }
             result = eval(args, globals(), env)
@@ -1094,6 +1100,10 @@ class PyOCDTool(object):
     def handle_show_peripherals(self, args):
         for periph in sorted(self.peripherals.values(), key=lambda x:x.base_address):
             print "0x%08x: %s" % (periph.base_address, periph.name)
+
+    def handle_show_nreset(self, args):
+        rst = int(not self.target.link.is_reset_asserted())
+        print "nRESET = {}".format(rst)
 
     def handle_set(self, args):
         if len(args) < 1:

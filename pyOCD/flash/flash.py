@@ -327,6 +327,7 @@ class Flash(object):
         data_list = []
 
         if self.flash_algo_debug:
+            logging.debug("flash.callFunction:pc=%x, r0=%x, r1=%x, r2=%x, r3=%x, init=%s", pc, r0 or 0, r1 or 0, r2 or 0, r3 or 0, init)
             # Save vector catch state for use in waitForCompletion()
             self._saved_vector_catch = self.target.getVectorCatch()
             self.target.setVectorCatch(Target.CATCH_ALL)

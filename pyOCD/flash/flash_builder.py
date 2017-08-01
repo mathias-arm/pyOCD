@@ -209,6 +209,7 @@ class FlashBuilder(object):
         # in ROM then don't use a chip erase
         if self.page_list[0].addr > self.flash_start:
             if chip_erase is None:
+                logging.debug("Disabling chip erase because flash address 0x%x is not the same as flash start 0x%x", self.page_list[0].addr, self.flash_start)
                 chip_erase = False
             elif chip_erase is True:
                 logging.warning('Chip erase used when flash address 0x%x is not the same as flash start 0x%x', self.page_list[0].addr, self.flash_start)

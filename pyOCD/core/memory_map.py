@@ -260,6 +260,11 @@ class MemoryMap(object):
     def getIntersectingRegions(self, start, end=None, length=None, range=None):
         start, end = check_range(start, end, length, range)
         return [r for r in self._regions if r.intersectsRange(start, end)]
+    
+    def getRegionsOfType(self, type):
+        for r in self._regions:
+            if r.type == type:
+                yield r
 
     ## @brief Generate GDB memory map XML.
     def getXML(self):

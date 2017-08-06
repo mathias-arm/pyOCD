@@ -16,7 +16,7 @@
 """
 
 from .context import DebugContext
-from ..coresight.cortex_m import CORE_REGISTER
+from ..coresight.cortex_m import (CORE_REGISTER, register_name_to_index)
 from ..utility import conversion
 from intervaltree import (Interval, IntervalTree)
 import logging
@@ -94,29 +94,15 @@ class RegisterCache(object):
             self._reset_cache()
             self._run_token = self._context.core.run_token
 
-    def _register_name_to_index(self, reg):
-        """
-        return register index based on name.
-        If reg is a string, find the number associated to this register
-        in the lookup table CORE_REGISTER
-        """
-        if isinstance(reg, str):
-            try:
-                reg = CORE_REGISTER[reg.lower()]
-            except KeyError:
-                self._log.error('cannot find %s core register', reg)
-                return
-        return reg
-
     def _convert_and_check_registers(self, reg_list):
         # convert to index only
-        reg_list = [self._register_name_to_index(reg) for reg in reg_list]
+        reg_list = [register_name_to_index(reg) for reg in reg_list]
 
         # Sanity check register values
         for reg in reg_list:
             if reg not in CORE_REGISTER.values():
                 raise ValueError("unknown reg: %d" % reg)
-            elif ((reg >= 128) or (reg == 33)) and (not self._context.core.has_fpu):
+            elif ((reg >= 0x40) or (reg == 33)) and (not self._context.core.has_fpu):
                 raise ValueError("attempt to read FPU register without FPU")
 
         return reg_list
@@ -180,7 +166,10 @@ class RegisterCache(object):
         # Just remove all cached CFBP based register values.
         if writing_cfbp:
             for r in self.CFBP_REGS:
-                del self._cache[r]
+                try:
+                    del self._cache[r]
+                except KeyError:
+                    pass
 
         # Write new register values to target.
         self._context.writeCoreRegistersRaw(reg_list, data_list)

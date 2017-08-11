@@ -25,7 +25,7 @@ from .dap_settings import DAPSettings
 from .dap_access_api import DAPAccessIntf
 from .cmsis_dap_core import CMSIS_DAP_Protocol
 from .interface import INTERFACE, usb_backend, ws_backend
-from .cmsis_dap_core import (COMMAND_ID, DAP_TRANSFER_OK,
+from .cmsis_dap_core import (COMMAND_ID, CAPABILITIES, DAP_TRANSFER_OK,
                              DAP_TRANSFER_FAULT, DAP_TRANSFER_WAIT)
 
 # CMSIS-DAP values
@@ -522,6 +522,12 @@ class DAPAccessCMSISDAP(DAPAccessIntf):
         self._interface.setPacketCount(self._packet_count)
         self._packet_size = self._protocol.dapInfo("PACKET_SIZE")
         self._interface.setPacketSize(self._packet_size)
+        self._capabilities = self._protocol.dapInfo("CAPABILITIES")
+        self._has_swo_uart = (self._capabilities & CAPABILITIES['SWO_UART']) != 0
+        if self._has_swo_uart:
+            self._swo_buffer_size = self._protocol.dapInfo("SWO_BUFFER_SIZE")
+        else:
+            self._swo_buffer_size = 0
 
         self._init_deferred_buffers()
 

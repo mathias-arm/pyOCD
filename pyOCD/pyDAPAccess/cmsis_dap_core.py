@@ -38,6 +38,15 @@ COMMAND_ID = {'DAP_INFO': 0x00,
               'DAP_JTAG_SEQUENCE': 0x14,
               'DAP_JTAG_CONFIGURE': 0x15,
               'DAP_JTAG_IDCODE': 0x16,
+              'DAP_SWO_TRANSPORT': 0x17,
+              'DAP_SWO_MODE': 0x18,
+              'DAP_SWO_BAUDRATE': 0x19,
+              'DAP_SWO_CONTROL': 0x1A,
+              'DAP_SWO_STATUS': 0x1B,
+              'DAP_SWO_DATA': 0x1C,
+              'DAP_SWD_SEQUENCE': 0x21,
+              'DAP_QUEUE_COMMANDS': 0x7E,
+              'DAP_EXECUTE_COMMANDS': 0x7F,
               'DAP_VENDOR0': 0x80,
               }
 
@@ -50,8 +59,16 @@ ID_INFO = {'VENDOR_ID': 0x01,
            'CAPABILITIES': 0xf0,
            'SWO_BUFFER_SIZE': 0xfd,
            'PACKET_COUNT': 0xfe,
-           'PACKET_SIZE': 0xff
+           'PACKET_SIZE': 0xff,
            }
+
+CAPABILITIES = {'SWD': 0x01,
+                'JTAG': 0x02,
+                'SWO_UART': 0x04,
+                'SWO_MANCHESTER': 0x08,
+                'ATOMIC_COMMANDS': 0x10,
+                'DAP_SWD_SEQUENCE': 0x20,
+                }
 
 PINS = {'None': 0x00,
         'SWCLK_TCK': (1 << 0),
@@ -68,6 +85,28 @@ DAP_JTAG_POR = 2
 
 DAP_LED_CONNECT = 0
 DAP_LED_RUNNING = 1
+
+# Options for DAP_SWO_TRANSPORT command.
+class DAP_SWO_TRANSPORT:
+    NONE = 0
+    DAP_SWO_DATA = 1
+
+# SWO mode options.
+class DAP_SWO_MODE:
+    OFF = 0
+    UART = 1
+    MANCHESTER = 2
+
+# SWO control acions.
+class DAP_SWO_CONTROL:
+    STOP = 0
+    START = 1
+
+# SWO status masks.
+class DAP_SWO_STATUS:
+    CAPTURE = 0x01
+    ERROR = 0x40
+    OVERRUN = 0x80
 
 DAP_OK = 0
 DAP_ERROR = 0xff
@@ -105,6 +144,8 @@ class CMSIS_DAP_Protocol(object):
                 return resp[2]
             if resp[1] == 2:
                 return (resp[3] << 8) | resp[2]
+            if resp[1] == 4:
+                return (resp[5] << 24) | (resp[4] << 16) | (resp[3] << 8) | resp[2]
 
         # String values. They are sent as C strings with a terminating null char, so we strip it out.
         x = array.array('B', [i for i in resp[2:2 + resp[1]]]).tostring()
@@ -363,6 +404,114 @@ class CMSIS_DAP_Protocol(object):
                 (resp[3] << 8) | \
                 (resp[4] << 16) | \
                 (resp[5] << 24)
+
+    def swoTransport(self, transport):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_TRANSPORT'])
+        cmd.append(transport)
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_TRANSPORT']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        if resp[1] != DAP_OK:
+            # Operation failed
+            raise DAPAccessIntf.CommandError()
+
+        return resp[1]
+
+    def swoMode(self, mode):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_MODE'])
+        cmd.append(mode)
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_MODE']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        if resp[1] != DAP_OK:
+            # Operation failed
+            raise DAPAccessIntf.CommandError()
+
+        return resp[1]
+
+    def swoBaudrate(self, baudrate):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_BAUDRATE'])
+        cmd.append(baudrate & 0xff)
+        cmd.append((baudrate >> 8) & 0xff)
+        cmd.append((baudrate >> 16) & 0xff)
+        cmd.append((baudrate >> 24) & 0xff)
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_BAUDRATE']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        return  (resp[1] << 0) | \
+                (resp[2] << 8) | \
+                (resp[3] << 16) | \
+                (resp[4] << 24)
+
+    def swoControl(self, action):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_CONTROL'])
+        cmd.append(action)
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_CONTROL']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        if resp[1] != DAP_OK:
+            # Operation failed
+            raise DAPAccessIntf.CommandError()
+
+        return resp[1]
+
+    def swoStatus(self):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_STATUS'])
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_STATUS']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        return (resp[1],
+                    (resp[2] << 0) | \
+                    (resp[3] << 8) | \
+                    (resp[4] << 16) | \
+                    (resp[5] << 24)
+                )
+
+    def swoData(self, count):
+        cmd = []
+        cmd.append(COMMAND_ID['DAP_SWO_DATA'])
+        cmd.append(count & 0xff)
+        cmd.append((count >> 8) & 0xff)
+        self.interface.write(cmd)
+
+        resp = self.interface.read()
+        if resp[0] != COMMAND_ID['DAP_SWO_DATA']:
+            # Response is to a different command
+            raise DAPAccessIntf.DeviceError()
+
+        status = resp[1]
+        count = (resp[2] << 0) | \
+                    (resp[3] << 8)
+        if count > 0:
+            data = resp[4:]
+        else:
+            data = []
+        return (status, count, data)
 
     def vendor(self, index, data):
         cmd = []

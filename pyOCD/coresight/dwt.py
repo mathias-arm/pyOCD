@@ -1,6 +1,6 @@
 """
  mbed CMSIS-DAP debugger
- Copyright (c) 2015 ARM Limited
+ Copyright (c) 2015-2017 ARM Limited
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -38,10 +38,35 @@ class Watchpoint(HardwareBreakpoint):
 class DWT(object):
     # DWT (data watchpoint & trace)
     DWT_CTRL = 0xE0001000
+    DWT_CYCCNT = 0xE0001004
+    DWT_CPICNT = 0xE0001008
+    DWT_EXCCNT = 0xE000100C
+    DWT_SLEEPCNT = 0xE0001010
+    DWT_LSUCNT = 0xE0001014
+    DWT_FOLDCNT = 0xE0001018
+    DWT_PCSR = 0xE000101C
     DWT_COMP_BASE = 0xE0001020
     DWT_MASK_OFFSET = 4
     DWT_FUNCTION_OFFSET = 8
     DWT_COMP_BLOCK_SIZE = 0x10
+    
+    DWT_CTRL_NUM_COMP_MASK = (0xF << 28)
+    DWT_CTRL_NUM_COMP_SHIFT = 28
+    DWT_CTRL_CYCEVTENA_MASK = (1 << 22)
+    DWT_CTRL_FOLDEVTENA_MASK = (1 << 21)
+    DWT_CTRL_LSUEVTENA_MASK = (1 << 20)
+    DWT_CTRL_SLEEPEVTENA_MASK = (1 << 19)
+    DWT_CTRL_EXCEVTENA_MASK = (1 << 18)
+    DWT_CTRL_CPIEVTENA_MASK = (1 << 17)
+    DWT_CTRL_PCSAMPLENA_MASK = (1 << 12)
+    DWT_CTRL_SYNCTAP_MASK = (0x3 << 10)
+    DWT_CTRL_SYNCTAP_SHIFT = 10
+    DWT_CTRL_CYCTAP_MASK = (1 << 9)
+    DWT_CTRL_POSTINIT_MASK = (0xF << 5)
+    DWT_CTRL_POSTINIT_SHIFT = 5
+    DWT_CTRL_POSTRESET_MASK = (0xF << 1)
+    DWT_CTRL_POSTRESET_SHIFT = 1
+    DWT_CTRL_CYCCNTENA_MASK = (1 << 0)
 
     WATCH_TYPE_TO_FUNCT = {
                             Target.WATCHPOINT_READ: 5,
@@ -69,7 +94,7 @@ class DWT(object):
         demcr = demcr | DEMCR_TRCENA
         self.ap.writeMemory(DEMCR, demcr)
         dwt_ctrl = self.ap.readMemory(DWT.DWT_CTRL)
-        watchpoint_count = (dwt_ctrl >> 28) & 0xF
+        watchpoint_count = (dwt_ctrl & DWT.DWT_CTRL_NUM_COMP_MASK) >> DWT.DWT_CTRL_NUM_COMP_SHIFT
         logging.info("%d hardware watchpoints", watchpoint_count)
         for i in range(watchpoint_count):
             self.watchpoints.append(Watchpoint(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i, self))

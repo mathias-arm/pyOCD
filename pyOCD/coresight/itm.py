@@ -18,6 +18,11 @@
 from ..core.target import Target
 import logging
 
+# Need a local copy to prevent circular import.
+# Debug Exception and Monitor Control Register
+DEMCR = 0xE000EDFC
+DEMCR_TRCENA = (1 << 24)
+
 class ITMOptions(object):
     def __init__(self):
         pass
@@ -34,6 +39,7 @@ class ITM(object):
     TCR_SWOENA_MASK = (1 << 4)
     TCR_TSPRESCALE_MASK = (0x3 << 8)
     TCR_TSPRESCALE_SHIFT = 8
+    TCR_TSPRESCALE_DIV_1 = 0x0
     TCR_TSPRESCALE_DIV_4 = 0x1
     TCR_TSPRESCALE_DIV_16 = 0x2
     TCR_TSPRESCALE_DIV_64 = 0x3
@@ -55,6 +61,12 @@ class ITM(object):
         self._is_enabled = False
 
     def init(self):
+        # Make sure trace is enabled.
+        demcr = self.ap.readMemory(DEMCR)
+        if (demcr & DEMCR_TRCENA) == 0:
+            demcr |= DEMCR_TRCENA
+            self.ap.writeMemory(DEMCR, demcr)
+
         # Unlock if required.
         val = self.ap.read32(ITM.LSR)
         if (val & (ITM.LSR_SLK_MASK | ITM.LSR_SLI_MASK)) == (ITM.LSR_SLK_MASK | ITM.LSR_SLI_MASK):
@@ -68,9 +80,8 @@ class ITM(object):
 
     def enable(self):
         self.ap.write32(ITM.TCR, ((1 << ITM.TCR_TRACEBUSID_SHIFT) | ITM.TCR_ITMENA_MASK | 
-                                    ITM.TCR_TSENA_MASK | ITM.TCR_SYNCENA_MASK |
-                                    ITM.TCR_TXENA_MASK | ITM.TCR_SWOENA_MASK |
-                                    (ITM.TCR_TSPRESCALE_DIV_64 << ITM.TCR_TSPRESCALE_SHIFT)))
+                                    ITM.TCR_TSENA_MASK | ITM.TCR_TXENA_MASK |
+                                    (ITM.TCR_TSPRESCALE_DIV_4 << ITM.TCR_TSPRESCALE_SHIFT)))
         self._is_enabled = True
     
     def disable(self):

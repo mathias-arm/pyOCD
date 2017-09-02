@@ -58,6 +58,7 @@ class DWT(object):
     DWT_CTRL_SLEEPEVTENA_MASK = (1 << 19)
     DWT_CTRL_EXCEVTENA_MASK = (1 << 18)
     DWT_CTRL_CPIEVTENA_MASK = (1 << 17)
+    DWT_CTRL_EXCTRCENA_MASK = (1 << 16)
     DWT_CTRL_PCSAMPLENA_MASK = (1 << 12)
     DWT_CTRL_SYNCTAP_MASK = (0x3 << 10)
     DWT_CTRL_SYNCTAP_SHIFT = 10
@@ -90,9 +91,12 @@ class DWT(object):
     # Reads the number of hardware watchpoints available on the core  and makes sure that they
     # are all disabled and ready for future use.
     def init(self):
+        # Make sure trace is enabled.
         demcr = self.ap.readMemory(DEMCR)
-        demcr = demcr | DEMCR_TRCENA
-        self.ap.writeMemory(DEMCR, demcr)
+        if (demcr & DEMCR_TRCENA) == 0:
+            demcr |= DEMCR_TRCENA
+            self.ap.writeMemory(DEMCR, demcr)
+        
         dwt_ctrl = self.ap.readMemory(DWT.DWT_CTRL)
         watchpoint_count = (dwt_ctrl & DWT.DWT_CTRL_NUM_COMP_MASK) >> DWT.DWT_CTRL_NUM_COMP_SHIFT
         logging.info("%d hardware watchpoints", watchpoint_count)

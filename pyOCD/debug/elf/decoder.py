@@ -35,7 +35,7 @@ class ElfSymbolDecoder(object):
 
         self.symtab = self.elffile.get_section_by_name('.symtab')
         self.symcount = self.symtab.num_symbols()
-
+        self.symbol_dict = {}
         self.symbol_tree = None
 
         # Build indices.
@@ -49,6 +49,12 @@ class ElfSymbolDecoder(object):
         try:
             return sorted(self.symbol_tree[addr])[0].data
         except IndexError:
+            return None
+    
+    def get_symbol_for_name(self, name):
+        try:
+            return self.symbol_dict[name]
+        except KeyError:
             return None
 
     def _build_symbol_search_tree(self):
@@ -65,11 +71,16 @@ class ElfSymbolDecoder(object):
 
             # Cannot put an empty interval into the tree, so ensure symbols have
             # at least a size of 1.
+            real_sym_size = sym_size
             if sym_size == 0:
                 sym_size = 1
 
-            syminfo = SymbolInfo(name=symbol.name, address=sym_value, size=sym_size, type=sym_type)
+            syminfo = SymbolInfo(name=symbol.name, address=sym_value, size=real_sym_size, type=sym_type)
 
+            # Add to symbol dict.
+            self.symbol_dict[symbol.name] = syminfo
+            
+            # Add to symbol tree.
             self.symbol_tree.addi(sym_value, sym_value+sym_size, syminfo)
 
     def _process_arm_type_symbols(self):

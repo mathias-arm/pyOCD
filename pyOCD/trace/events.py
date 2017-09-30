@@ -17,14 +17,6 @@
 
 import logging
 
-## @brief Abstract interface for a trace event sink.
-class TraceEventSink(object):
-    ## @brief Handle a single trace event.
-    #
-    # The event object will be a subclass of TraceEvent.
-    def receive(self, event):
-        raise NotImplementedError()
-
 ## @brief Base trace event class.
 class TraceEvent(object):
     def __init__(self, desc="", ts=0):

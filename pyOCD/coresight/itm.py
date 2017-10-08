@@ -81,7 +81,7 @@ class ITM(object):
     def enable(self):
         self.ap.write32(ITM.TCR, ((1 << ITM.TCR_TRACEBUSID_SHIFT) | ITM.TCR_ITMENA_MASK | 
                                     ITM.TCR_TSENA_MASK | ITM.TCR_TXENA_MASK |
-                                    (ITM.TCR_TSPRESCALE_DIV_4 << ITM.TCR_TSPRESCALE_SHIFT)))
+                                    (ITM.TCR_TSPRESCALE_DIV_1 << ITM.TCR_TSPRESCALE_SHIFT)))
         self._is_enabled = True
     
     def disable(self):

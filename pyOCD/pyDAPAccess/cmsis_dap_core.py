@@ -44,6 +44,10 @@ COMMAND_ID = {'DAP_INFO': 0x00,
               'DAP_SWO_CONTROL': 0x1A,
               'DAP_SWO_STATUS': 0x1B,
               'DAP_SWO_DATA': 0x1C,
+              'DAP_TI_INFO': 0x1D,
+              'DAP_TI_VALUE': 0x1E,
+              'DAP_TI_CAPTURE': 0x1F,
+              'DAP_TI_TRANSFERBLOCK': 0x20,
               'DAP_SWD_SEQUENCE': 0x21,
               'DAP_QUEUE_COMMANDS': 0x7E,
               'DAP_EXECUTE_COMMANDS': 0x7F,
@@ -57,6 +61,8 @@ ID_INFO = {'VENDOR_ID': 0x01,
            'TARGET_DEVICE_VENDOR': 0x05,
            'TARGET_DEVICE_NAME': 0x06,
            'CAPABILITIES': 0xf0,
+           'TEST_DOMAIN_TIMER': 0xf1,
+           'TRACE_DATA_MANAGEMENT': 0xf2,
            'SWO_BUFFER_SIZE': 0xfd,
            'PACKET_COUNT': 0xfe,
            'PACKET_SIZE': 0xff,
@@ -68,6 +74,8 @@ CAPABILITIES = {'SWD': 0x01,
                 'SWO_MANCHESTER': 0x08,
                 'ATOMIC_COMMANDS': 0x10,
                 'DAP_SWD_SEQUENCE': 0x20,
+                'TEST_DOMAIN_TIMER': 0x40,
+                'TRACE_DATA_MANAGEMENT': 0x100,
                 }
 
 PINS = {'None': 0x00,
@@ -139,13 +147,17 @@ class CMSIS_DAP_Protocol(object):
             return
 
         # Integer values
-        if id_ in (ID_INFO['CAPABILITIES'], ID_INFO['SWO_BUFFER_SIZE'], ID_INFO['PACKET_COUNT'], ID_INFO['PACKET_SIZE']):
+        if id_ in (ID_INFO['CAPABILITIES'], ID_INFO['SWO_BUFFER_SIZE'], ID_INFO['PACKET_COUNT'], ID_INFO['PACKET_SIZE'], ID_INFO['TEST_DOMAIN_TIMER']):
             if resp[1] == 1:
                 return resp[2]
             if resp[1] == 2:
                 return (resp[3] << 8) | resp[2]
             if resp[1] == 4:
                 return (resp[5] << 24) | (resp[4] << 16) | (resp[3] << 8) | resp[2]
+        elif id_ == ID_INFO['TRACE_DATA_MANAGEMENT']:
+            blockCount = (resp[3] << 8) | resp[2]
+            blockSize = (resp[5] << 8) | resp[4]
+            return blockCount, blockSize
 
         # String values. They are sent as C strings with a terminating null char, so we strip it out.
         x = array.array('B', [i for i in resp[2:2 + resp[1]]]).tostring()

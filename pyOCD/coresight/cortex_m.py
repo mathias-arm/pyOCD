@@ -273,11 +273,11 @@ class CortexM(Target):
         RegisterInfo('sp',      32,         'data_ptr',     'general'),
         RegisterInfo('lr',      32,         'int',          'general'),
         RegisterInfo('pc',      32,         'code_ptr',     'general'),
-        RegisterInfo('xpsr',    32,         'int',          'general'),
+        RegisterInfo('xpsr',    32,         'xpsr',         'general'),
         RegisterInfo('msp',     32,         'int',          'general'),
         RegisterInfo('psp',     32,         'int',          'general'),
         RegisterInfo('primask', 32,         'int',          'general'),
-        RegisterInfo('control', 32,         'int',          'general'),
+        RegisterInfo('control', 32,         'control',      'general'),
         ]
 
     regs_system_armv7_only = [
@@ -418,6 +418,28 @@ class CortexM(Target):
         self.register_list = []
         xml_root = Element('target')
         xml_regs_general = SubElement(xml_root, "feature", name="org.gnu.gdb.arm.m-profile")
+        
+        control = SubElement(xml_regs_general, 'flags', id="control", size="4")
+        SubElement(control, "field", name="nPRIV", start="0", end="0", type="bool")
+        SubElement(control, "field", name="SPSEL", start="1", end="1", type="bool")
+        if self.has_fpu:
+            SubElement(control, "field", name="FPCS", start="2", end="2", type="bool")
+
+        apsr = SubElement(xml_regs_general, 'struct', id="apsr", size="4")
+        SubElement(apsr, "field", name="N", start="31", end="31", type="bool")
+        SubElement(apsr, "field", name="Z", start="30", end="30", type="bool")
+        SubElement(apsr, "field", name="C", start="29", end="29", type="bool")
+        SubElement(apsr, "field", name="V", start="28", end="28", type="bool")
+        SubElement(apsr, "field", name="Q", start="27", end="27", type="bool")
+
+        ipsr = SubElement(xml_regs_general, 'struct', id="ipsr", size="4")
+        SubElement(ipsr, "field", name="EXC", start="0", end="8", type="int")
+        
+        xpsr = SubElement(xml_regs_general, 'union', id="xpsr")
+        SubElement(xpsr, "field", name="xpsr", type="uint32")
+        SubElement(xpsr, "field", name="apsr", type="apsr")
+        SubElement(xpsr, "field", name="ipsr", type="ipsr")
+        
         for reg in self.regs_general:
             self.register_list.append(reg)
             SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)

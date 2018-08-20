@@ -34,9 +34,11 @@ except ImportError:
 
 from .. import __version__
 from .. import (utility, coresight)
+from ..core.helpers import ConnectHelper
 from ..board import MbedBoard
 from ..target.family import target_kinetis
 from ..pyDAPAccess import DAPAccess
+from ..probe.debug_probe import DebugProbe
 from ..core.target import Target
 from ..utility import mask
 
@@ -462,6 +464,7 @@ class PyOCDConsole(object):
 
 class PyOCDTool(object):
     def __init__(self):
+        self.session = None
         self.board = None
         self.exitCode = 0
         self.step_into_interrupt = False
@@ -603,14 +606,19 @@ class PyOCDTool(object):
                 print("Setting SWD clock to %d kHz" % self.args.clock)
 
             # Connect to board.
-            self.board = MbedBoard.chooseBoard(board_id=self.args.board, target_override=self.args.target, init_board=False, frequency=(self.args.clock * 1000))
-            if self.board is None:
+            self.session = ConnectHelper.session_with_chosen_probe(
+                            board_id=self.args.board,
+                            target_override=self.args.target,
+                            init_board=False,
+                            frequency=(self.args.clock * 1000))
+            if self.session is None:
                 return 1
+            self.board = self.session.board
             self.board.target.setAutoUnlock(False)
             self.board.target.setHaltOnConnect(self.args.halt)
             try:
                 if not self.args.no_init:
-                    self.board.init()
+                    self.session.open()
             except DAPAccess.TransferFaultError as e:
                 if not self.board.target.isLocked():
                     print("Transfer fault while initing board: %s" % e)
@@ -624,7 +632,7 @@ class PyOCDTool(object):
                 return self.exitCode
 
             self.target = self.board.target
-            self.link = self.board.link
+            self.link = self.session.probe
             self.flash = self.board.flash
 
             # Set elf file if provided.
@@ -679,9 +687,9 @@ class PyOCDTool(object):
             print("Error:", e)
             self.exitCode = 1
         finally:
-            if self.board != None:
+            if self.session != None:
                 # Pass false to prevent target resume.
-                self.board.uninit(False)
+                self.session.close()
 
         return self.exitCode
     
@@ -694,7 +702,7 @@ class PyOCDTool(object):
         return self._peripherals
 
     def handle_list(self, args):
-        MbedBoard.listConnectedBoards()
+        ConnectHelper.list_connected_probes()
 
     def handle_status(self, args):
         if self.target.isLocked():
@@ -831,7 +839,7 @@ class PyOCDTool(object):
 
         # Print disasm of data.
         data = self.target.readBlockMemoryUnaligned8(addr, count)
-        self.print_disasm(str(bytearray(data)), addr)
+        self.print_disasm(bytes(bytearray(data)), addr)
 
     def handle_read8(self, args):
         return self.do_read(args, 8)
@@ -960,7 +968,7 @@ class PyOCDTool(object):
         if isCapstoneAvailable:
             addr &= ~1
             data = self.target.readBlockMemoryUnaligned8(addr, 4)
-            self.print_disasm(str(bytearray(data)), addr, maxInstructions=1)
+            self.print_disasm(bytes(bytearray(data)), addr, maxInstructions=1)
         else:
             print("PC = 0x%08x" % (addr))
 
@@ -1025,10 +1033,12 @@ class PyOCDTool(object):
             print("Error: invalid frequency")
             return 1
         self.link.set_clock(freq_Hz)
-        if self.link.get_swj_mode() == DAPAccess.PORT.SWD:
+        if self.link.wire_protocol == DebugProbe.Protocol.SWD:
             swd_jtag = 'SWD'
-        else:
+        elif self.link.wire_protocol == DebugProbe.Protocol.JTAG:
             swd_jtag = 'JTAG'
+        else:
+            swd_jtag = '??'
 
         if freq_Hz >= 1000000:
             nice_freq = "%.2f MHz" % (freq_Hz / 1000000)
@@ -1045,9 +1055,11 @@ class PyOCDTool(object):
     def handle_python(self, args):
         try:
             env = {
+                    'session' : self.session,
                     'board' : self.board,
                     'target' : self.target,
-                    'link' : self.link,
+                    'probe' : self.link,
+                    'link' : self.link, # Old name
                     'flash' : self.flash,
                     'dp' : self.target.dp,
                     'aps' : self.target.dp.aps,
@@ -1294,7 +1306,7 @@ class PyOCDTool(object):
         print_fields('DFSR', dfsr, DFSR_fields, showAll)
 
     def handle_show_nreset(self, args):
-        rst = int(not self.target.link.is_reset_asserted())
+        rst = int(not self.link.is_reset_asserted())
         print("nRESET = {}".format(rst))
 
     def handle_set(self, args):

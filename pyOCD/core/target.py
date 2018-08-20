@@ -71,9 +71,9 @@ class Target(Notifier):
     HALT_REASON_USER = 1
     HALT_REASON_DEBUG = 2
 
-    def __init__(self, link, memoryMap=None):
+    def __init__(self, session, memoryMap=None):
         super(Target, self).__init__()
-        self.link = link
+        self.session = session
         self.flash = None
         self.root_target = None
         self.part_number = ""
@@ -108,11 +108,8 @@ class Target(Notifier):
     def disconnect(self, resume=True):
         pass
 
-    def info(self, request):
-        return self.link.info(request)
-
     def flush(self):
-        self.link.flush()
+        self.session.probe.flush()
 
     def readIDCode(self):
         raise NotImplementedError()

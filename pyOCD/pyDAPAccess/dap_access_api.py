@@ -110,7 +110,13 @@ class DAPAccessIntf(object):
         """Set arguments to configure behavior"""
         raise NotImplementedError()
 
+    @property
+    def vendor_name(self):
+        raise NotImplementedError()
 
+    @property
+    def product_name(self):
+        raise NotImplementedError()
 
     # ------------------------------------------- #
     #          Host control functions

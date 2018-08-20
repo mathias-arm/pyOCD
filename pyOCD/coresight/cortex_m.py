@@ -303,7 +303,7 @@ class CortexM(Target, CoreSightComponent):
         return core
 
     def __init__(self, rootTarget, ap, memoryMap=None, core_num=0, cmpid=None, address=None):
-        Target.__init__(self, rootTarget.link, memoryMap)
+        Target.__init__(self, rootTarget.session, memoryMap)
         CoreSightComponent.__init__(self, ap, cmpid, address)
 
         self.root_target = rootTarget
@@ -422,9 +422,6 @@ class CortexM(Target, CoreSightComponent):
         return the IDCODE of the core
         """
         return self.dp.read_id_code()
-
-    def flush(self):
-        self.dp.flush()
 
     def writeMemory(self, addr, value, transfer_size=32):
         """

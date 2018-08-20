@@ -16,6 +16,7 @@
 """
 
 from ..pyDAPAccess import DAPAccess
+from ..probe.debug_probe import DebugProbe
 from .ap import (MEM_AP_CSW, _ap_addr_to_reg, LOG_DAP,
                 APSEL, APBANKSEL, APREG_MASK, AccessPort)
 from ..utility.sequencer import CallSequence
@@ -339,10 +340,10 @@ class DebugPort(object):
             self.clear_sticky_err()
 
     def clear_sticky_err(self):
-        mode = self.link.get_swj_mode()
-        if mode == DAPAccess.PORT.SWD:
+        mode = self.link.wire_protocol
+        if mode == DebugProbe.Protocol.SWD:
             self.link.write_reg(DAPAccess.REG.DP_0x0, (1 << 2))
-        elif mode == DAPAccess.PORT.JTAG:
+        elif mode == DebugProbe.Protocol.JTAG:
             self.link.write_reg(DP_CTRL_STAT, CTRLSTAT_STICKYERR)
         else:
             assert False

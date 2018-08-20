@@ -438,8 +438,7 @@ class DAPAccessCMSISDAP(DAPAccessIntf):
         all_interfaces = _get_interfaces()
         for interface in all_interfaces:
             try:
-                unique_id = _get_unique_id(interface)
-                new_daplink = DAPAccessCMSISDAP(unique_id)
+                new_daplink = DAPAccessCMSISDAP(None, interface=interface)
                 all_daplinks.append(new_daplink)
             except DAPAccessIntf.TransferError:
                 logger = logging.getLogger(__name__)
@@ -476,14 +475,21 @@ class DAPAccessCMSISDAP(DAPAccessIntf):
     # ------------------------------------------- #
     #          CMSIS-DAP and Other Functions
     # ------------------------------------------- #
-    def __init__(self, unique_id):
-        assert isinstance(unique_id, six.string_types)
+    def __init__(self, unique_id, interface=None):
+        assert isinstance(unique_id, six.string_types) or (unique_id is None and interface is not None)
         super(DAPAccessCMSISDAP, self).__init__()
+        if interface is not None:
+            self._unique_id = _get_unique_id(interface)
+            self._vendor_name = interface.vendor_name
+            self._product_name = interface.product_name
+        else:
+            self._unique_id = unique_id
+            self._vendor_name = ""
+            self._product_name = ""
         self._interface = None
         self._deferred_transfer = False
         self._protocol = None  # TODO, c1728p9 remove when no longer needed
         self._packet_count = None
-        self._unique_id = unique_id
         self._frequency = 1000000  # 1MHz default clock
         self._dap_port = None
         self._transfer_list = None
@@ -492,7 +498,14 @@ class DAPAccessCMSISDAP(DAPAccessIntf):
         self._commands_to_read = None
         self._command_response_buf = None
         self._logger = logging.getLogger(__name__)
-        return
+
+    @property
+    def vendor_name(self):
+        return self._vendor_name
+
+    @property
+    def product_name(self):
+        return self._product_name
 
     def open(self):
         if self._interface is None:
@@ -509,6 +522,9 @@ class DAPAccessCMSISDAP(DAPAccessIntf):
                     self._logger.error('Failed to get unique id for open', exc_info=True)
             if self._interface is None:
                 raise DAPAccessIntf.DeviceError("Unable to open device")
+
+        self._vendor_name = self._interface.vendor_name
+        self._product_name = self._interface.product_name
 
         self._interface.open()
         self._protocol = CMSIS_DAP_Protocol(self._interface)

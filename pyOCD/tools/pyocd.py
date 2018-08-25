@@ -35,6 +35,7 @@ except ImportError:
 from .. import __version__
 from .. import (utility, coresight)
 from ..core.helpers import ConnectHelper
+from ..core import exceptions
 from ..board import MbedBoard
 from ..target.family import target_kinetis
 from ..pyDAPAccess import DAPAccess
@@ -451,7 +452,7 @@ class PyOCDConsole(object):
         except ValueError:
             print("Error: invalid argument")
             traceback.print_exc()
-        except DAPAccess.TransferError as e:
+        except exceptions.TransferError as e:
             print("Error:", e)
             traceback.print_exc()
         except ToolError as e:
@@ -619,7 +620,7 @@ class PyOCDTool(object):
             try:
                 if not self.args.no_init:
                     self.session.open()
-            except DAPAccess.TransferFaultError as e:
+            except exceptions.TransferFaultError as e:
                 if not self.board.target.isLocked():
                     print("Transfer fault while initing board: %s" % e)
                     traceback.print_exc()
@@ -663,7 +664,7 @@ class PyOCDTool(object):
                         # Say what we're connected to.
                         print("Connected to %s [%s]: %s" % (self.target.part_number,
                             status, self.board.getUniqueID()))
-                    except DAPAccess.TransferFaultError:
+                    except exceptions.TransferFaultError:
                         pass
 
                 # Run the command line.
@@ -679,7 +680,7 @@ class PyOCDTool(object):
             self.exitCode = 0
         except ValueError:
             print("Error: invalid argument")
-        except DAPAccess.TransferError:
+        except exceptions.TransferError:
             print("Error: transfer failed")
             traceback.print_exc()
             self.exitCode = 2

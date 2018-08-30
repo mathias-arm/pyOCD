@@ -633,8 +633,10 @@ class PyOCDTool(object):
                 return self.exitCode
 
             self.target = self.board.target
-            self.link = self.session.probe
+            self.probe = self.session.probe
             self.flash = self.board.flash
+            
+            self.has_dp_access = hasattr(self.session.controller, 'dp')
 
             # Set elf file if provided.
             if self.args.elf:
@@ -819,7 +821,7 @@ class PyOCDTool(object):
             return
         state = int(args[0], base=0)
         print("nRESET = %d" % (state))
-        self.target.dp.assert_reset((state == 0))
+        self.probe.assert_reset((state == 0))
 
     @cmdoptions([make_option('-c', "--center", action="store_true")])
     def handle_disasm(self, args, other):
@@ -1033,10 +1035,10 @@ class PyOCDTool(object):
         except:
             print("Error: invalid frequency")
             return 1
-        self.link.set_clock(freq_Hz)
-        if self.link.wire_protocol == DebugProbe.Protocol.SWD:
+        self.probe.set_clock(freq_Hz)
+        if self.probe.wire_protocol == DebugProbe.Protocol.SWD:
             swd_jtag = 'SWD'
-        elif self.link.wire_protocol == DebugProbe.Protocol.JTAG:
+        elif self.probe.wire_protocol == DebugProbe.Protocol.JTAG:
             swd_jtag = 'JTAG'
         else:
             swd_jtag = '??'
@@ -1059,13 +1061,17 @@ class PyOCDTool(object):
                     'session' : self.session,
                     'board' : self.board,
                     'target' : self.target,
-                    'probe' : self.link,
-                    'link' : self.link, # Old name
+                    'probe' : self.probe,
+                    'link' : self.probe, # Old name
                     'flash' : self.flash,
-                    'dp' : self.target.dp,
-                    'aps' : self.target.dp.aps,
                     'elf' : self.elf,
                 }
+            if self.has_dp_access:
+                env['dp'] = self.session.controller.dp
+                env['aps'] = self.session.controller.dp.aps
+            else:
+                env['dp'] = None
+                env['aps'] = None
             result = eval(args, globals(), env)
             if result is not None:
                 if type(result) in six.integer_types:
@@ -1085,15 +1091,21 @@ class PyOCDTool(object):
         print("Selected core %d" % core)
 
     def handle_readdp(self, args):
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
         if len(args) < 1:
             print("Missing DP address")
             return
         addr_int = self.convert_value(args[0])
         addr = DP_REGS_MAP[addr_int]
-        result = self.target.dp.read_reg(addr)
+        result = self.session.controller.dp.read_reg(addr)
         print("DP register 0x%x = 0x%08x" % (addr_int, result))
 
     def handle_writedp(self, args):
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
         if len(args) < 1:
             print("Missing DP address")
             return
@@ -1103,9 +1115,12 @@ class PyOCDTool(object):
         addr_int = self.convert_value(args[0])
         addr = DP_REGS_MAP[addr_int]
         data = self.convert_value(args[1])
-        self.target.dp.write_reg(addr, data)
+        self.session.controller.dp.write_reg(addr, data)
 
     def handle_readap(self, args):
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
         if len(args) < 1:
             print("Missing AP address")
             return
@@ -1113,10 +1128,13 @@ class PyOCDTool(object):
             addr = self.convert_value(args[0])
         elif len(args) == 2:
             addr = (self.convert_value(args[0]) << 24) | self.convert_value(args[1])
-        result = self.target.dp.readAP(addr)
+        result = self.session.controller.dp.readAP(addr)
         print("AP register 0x%x = 0x%08x" % (addr, result))
 
     def handle_writeap(self, args):
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
         if len(args) < 1:
             print("Missing AP address")
             return
@@ -1130,18 +1148,24 @@ class PyOCDTool(object):
             addr = (self.convert_value(args[0]) << 24) | self.convert_value(args[1])
             data_arg = 2
         data = self.convert_value(args[data_arg])
-        self.target.dp.writeAP(addr, data)
+        self.session.controller.dp.writeAP(addr, data)
 
     def handle_initdp(self, args):
-        self.target.dp.init()
-        self.target.dp.power_up_debug()
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
+        self.session.controller.dp.init()
+        self.session.controller.dp.power_up_debug()
 
     def handle_makeap(self, args):
+        if not self.has_dp_access:
+            print("Probe does not provide DAP access")
+            return
         if len(args) < 1:
             print("Missing APSEL")
             return
         apsel = self.convert_value(args[0])
-        if apsel in self.target.aps:
+        if apsel in self.session.controller.dp.aps:
             print("AP with APSEL=%d already exists" % apsel)
             return
         exists = coresight.ap.AccessPort.probe(self.target.dp, apsel)
@@ -1149,7 +1173,7 @@ class PyOCDTool(object):
             print("Error: no AP with APSEL={} exists".format(apsel))
             return
         ap = coresight.ap.AccessPort.create(self.target.dp, apsel)
-        self.target.dp.aps[apsel] = ap
+        self.session.controller.dp.aps[apsel] = ap
 
     def handle_where(self, args):
         if self.elf is None:
@@ -1307,7 +1331,7 @@ class PyOCDTool(object):
         print_fields('DFSR', dfsr, DFSR_fields, showAll)
 
     def handle_show_nreset(self, args):
-        rst = int(not self.link.is_reset_asserted())
+        rst = int(not self.probe.is_reset_asserted())
         print("nRESET = {}".format(rst))
 
     def handle_set(self, args):

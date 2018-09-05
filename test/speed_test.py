@@ -64,9 +64,9 @@ class SpeedTest(Test):
         read_speed = None
         write_speed = None
         try:
-            result = self.test_function(board.getUniqueID())
+            result = self.test_function(board.unique_id)
         except Exception as e:
-            print("Exception %s when testing board %s" % (e, board.getUniqueID()))
+            print("Exception %s when testing board %s" % (e, board.unique_id))
             result = SpeedTestResult()
             result.passed = False
             traceback.print_exc(file=sys.stdout)
@@ -77,7 +77,7 @@ class SpeedTest(Test):
 
 def speed_test(board_id):
     with MbedBoard.chooseBoard(board_id=board_id, frequency=1000000) as board:
-        target_type = board.getTargetType()
+        target_type = board.target_type
 
         test_clock = 10000000
         if target_type == "nrf51":

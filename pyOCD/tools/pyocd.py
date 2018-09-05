@@ -663,7 +663,7 @@ class PyOCDTool(object):
 
                         # Say what we're connected to.
                         print("Connected to %s [%s]: %s" % (self.target.part_number,
-                            status, self.board.getUniqueID()))
+                            status, self.board.unique_id))
                     except exceptions.TransferFaultError:
                         pass
 
@@ -1206,7 +1206,7 @@ class PyOCDTool(object):
             raise ToolError("unknown info name '%s'" % infoName)
 
     def handle_show_unique_id(self, args):
-        print("Unique ID:    %s" % self.board.getUniqueID())
+        print("Unique ID:    %s" % self.board.unique_id)
 
     def handle_show_target(self, args):
         print("Target:       %s" % self.target.part_number)

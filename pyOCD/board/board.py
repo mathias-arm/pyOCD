@@ -29,7 +29,8 @@ class Board(object):
     def __init__(self, session, target=None):
         if target is None:
             target = 'cortex_m'
-        self.session = session
+        self._session = session
+        self._target_type = target
         try:
             target = target.lower()
             self.target = TARGET[target](session)
@@ -56,5 +57,55 @@ class Board(object):
             except:
                 log.error("link exception during target disconnect:", exc_info=True)
 
+    @property
+    def session(self):
+        return self._session
+        
+    @property
+    def unique_id(self):
+        return self.session.probe.unique_id
+    
+    @property
+    def target_type(self):
+        return self._target_type
+    
+    @property
+    def test_binary(self):
+        return None
+    
+    @property
+    def name(self):
+        return "board"
+    
+    @property
+    def description(self):
+        return self.name
+
+    # Deprecated methods...
+    
+    def getUniqueID(self):
+        """
+        Return the unique id of the board
+        """
+        return self.unique_id
+
+    def getTargetType(self):
+        """
+        Return the type of the board
+        """
+        return self.target_type
+
+    def getTestBinary(self):
+        """
+        Return name of test binary file
+        """
+        return self.test_binary
+
+    def getBoardName(self):
+        """
+        Return board name
+        """
+        return self.name
+
     def getInfo(self):
-        return ""
+        return self.description

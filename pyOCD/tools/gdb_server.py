@@ -220,10 +220,10 @@ class GDBServerTool(object):
 
             for mbed in all_mbeds:
                 d = {
-                    'unique_id' : mbed.unique_id,
-                    'info' : mbed.getInfo(),
-                    'board_name' : mbed.getBoardName(),
-                    'target' : mbed.getTargetType(),
+                    'unique_id' : mbed.probe.unique_id,
+                    'info' : mbed.board.description,
+                    'board_name' : mbed.board.name,
+                    'target' : mbed.board.target_type,
                     'vendor_name' : '',
                     'product_name' : '',
                     }

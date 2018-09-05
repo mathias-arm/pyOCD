@@ -102,11 +102,11 @@ class FlashTest(Test):
 
     def run(self, board):
         try:
-            result = self.test_function(board.getUniqueID())
+            result = self.test_function(board.unique_id)
         except Exception as e:
             result = FlashTestResult()
             result.passed = False
-            print("Exception %s when testing board %s" % (e, board.getUniqueID()))
+            print("Exception %s when testing board %s" % (e, board.unique_id))
             traceback.print_exc(file=sys.stdout)
         result.board = board
         result.test = self
@@ -124,7 +124,7 @@ def same(d1, d2):
 
 def flash_test(board_id):
     with MbedBoard.chooseBoard(board_id=board_id, frequency=1000000) as board:
-        target_type = board.getTargetType()
+        target_type = board.target_type
 
         test_clock = 10000000
         if target_type == "nrf51":
@@ -163,7 +163,7 @@ def flash_test(board_id):
 
             print("\n\n===== Testing flash region '%s' from 0x%08x to 0x%08x ====" % (rom_region.name, rom_region.start, rom_region.end))
 
-            binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
+            binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
             with open(binary_file, "rb") as f:
                 data = f.read()
             data = struct.unpack("%iB" % len(data), data)

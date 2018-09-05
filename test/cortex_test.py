@@ -50,11 +50,11 @@ class CortexTest(Test):
 
     def run(self, board):
         try:
-            result = self.test_function(board.getUniqueID())
+            result = self.test_function(board.unique_id)
         except Exception as e:
             result = CortexTestResult()
             result.passed = False
-            print("Exception %s when testing board %s" % (e, board.getUniqueID()))
+            print("Exception %s when testing board %s" % (e, board.unique_id))
             traceback.print_exc(file=sys.stdout)
         result.board = board
         result.test = self
@@ -79,9 +79,9 @@ def test_function(board, function):
 
 def cortex_test(board_id):
     with MbedBoard.chooseBoard(board_id=board_id, frequency=1000000) as board:
-        target_type = board.getTargetType()
+        target_type = board.target_type
 
-        binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
+        binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
 
         test_clock = 10000000
         addr_invalid = 0x3E000000 # Last 16MB of ARM SRAM region - typically empty

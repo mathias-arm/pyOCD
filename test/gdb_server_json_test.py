@@ -51,11 +51,11 @@ class GdbServerJsonTest(Test):
 
     def run(self, board):
         try:
-            result = self.test_function(board.getUniqueID())
+            result = self.test_function(board.unique_id)
         except Exception as e:
             result = GdbServerJsonTestResult()
             result.passed = False
-            print("Exception %s when testing board %s" % (e, board.getUniqueID()))
+            print("Exception %s when testing board %s" % (e, board.unique_id))
             traceback.print_exc(file=sys.stdout)
         result.board = board
         result.test = self

@@ -63,12 +63,12 @@ class GdbTest(Test):
 
     def run(self, board):
         try:
-            result = self.test_function(board.getUniqueID(), self.n)
+            result = self.test_function(board.unique_id, self.n)
         except Exception as e:
             result = GdbTestResult()
             result.passed = False
             print("Exception %s when testing board %s" %
-                  (e, board.getUniqueID()))
+                  (e, board.unique_id))
             traceback.print_exc(file=sys.stdout)
         result.board = board
         result.test = self
@@ -92,11 +92,11 @@ def test_gdb(board_id=None, n=0):
         ram_regions = [region for region in memory_map if region.type == 'ram']
         ram_region = ram_regions[0]
         rom_region = memory_map.getBootMemory()
-        target_type = board.getTargetType()
+        target_type = board.target_type
         binary_file = os.path.join(parentdir, 'binaries',
-                                   board.getTestBinary())
+                                   board.test_binary)
         if board_id is None:
-            board_id = board.getUniqueID()
+            board_id = board.unique_id
         test_clock = 10000000
         test_port = 3333 + n
         telnet_port = 4444 + n

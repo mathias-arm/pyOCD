@@ -44,10 +44,10 @@ def basic_test(board_id, file):
         f = None
         binary_file = "l1_"
 
-        target_type = board.getTargetType()
+        target_type = board.target_type()
 
         if file is None:
-            binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
+            binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
         else:
             binary_file = file
 
@@ -69,7 +69,7 @@ def basic_test(board_id, file):
 
 
         print("\n\n------ GET Unique ID ------")
-        print("Unique ID: %s" % board.getUniqueID())
+        print("Unique ID: %s" % board.unique_id)
 
         print("\n\n------ TEST READ / WRITE CORE REGISTER ------")
         pc = target.readCoreRegister('pc')

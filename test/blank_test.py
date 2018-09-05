@@ -48,7 +48,7 @@ for i in range(0, 100):
 
 print("\n\n------ Flashing new code ------")
 with MbedBoard.chooseBoard() as board:
-    binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
+    binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
     board.flash.flashBinary(binary_file)
 
 print("\n\n------ Testing Attaching to regular board ------")

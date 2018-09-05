@@ -130,7 +130,7 @@ def generate_xml_results(result_list):
 
 def print_board_header(outputFile, board, n, includeDividers=True, includeLeadingNewline=False):
     header = "TESTING BOARD {name} [{target}] [{uid}] #{n}".format(
-        name=board.name, target=board.target_type, uid=board.getUniqueID(), n=n)
+        name=board.name, target=board.target_type, uid=board.unique_id, n=n)
     if includeDividers:
         divider = "=" * len(header)
         if includeLeadingNewline:
@@ -266,7 +266,7 @@ def main():
 
     # Put together list of boards to test
     board_list = MbedBoard.getAllConnectedBoards(close=True, blocking=False)
-    board_id_list = sorted(b.getUniqueID() for b in board_list)
+    board_id_list = sorted(b.unique_id for b in board_list)
 
     # If only 1 job was requested, don't bother spawning processes.
     start = time()

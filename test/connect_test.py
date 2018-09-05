@@ -62,7 +62,7 @@ class ConnectTest(Test):
         try:
             result = self.test_function(board)
         except Exception as e:
-            print("Exception %s when testing board %s" % (e, board.getUniqueID()))
+            print("Exception %s when testing board %s" % (e, board.unique_id))
             result = ConnectTestResult()
             result.passed = False
             traceback.print_exc(file=sys.stdout)
@@ -72,8 +72,8 @@ class ConnectTest(Test):
 
 
 def connect_test(board):
-    board_id = board.getUniqueID()
-    binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
+    board_id = board.unique_id
+    binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
     print("binary file: %s" % binary_file)
 
     test_pass_count = 0

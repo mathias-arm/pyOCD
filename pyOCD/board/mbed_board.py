@@ -36,13 +36,13 @@ class MbedBoard(Board):
         try:
             board_id = unique_id[0:4]
             board_info = BOARD_ID_TO_INFO[board_id]
-            self.name = board_info.name
+            self._name = board_info.name
             self.native_target = board_info.target
-            self.test_binary = board_info.binary
+            self._test_binary = board_info.binary
         except KeyError:
-            self.name = "Unknown Board"
+            self._name = "Unknown Board"
             self.native_target = None
-            self.test_binary = None
+            self._test_binary = None
 
         # Unless overridden use the native target
         if target is None:
@@ -53,34 +53,23 @@ class MbedBoard(Board):
             target = "cortex_m"
 
         super(MbedBoard, self).__init__(session, target)
-        self.unique_id = unique_id
-        self.target_type = target
 
-    def getUniqueID(self):
-        """
-        Return the unique id of the board
-        """
-        return self.unique_id
-
-    def getTargetType(self):
-        """
-        Return the type of the board
-        """
-        return self.target_type
-
-    def getTestBinary(self):
+    @property
+    def test_binary(self):
         """
         Return name of test binary file
         """
-        return self.test_binary
+        return self._test_binary
 
-    def getBoardName(self):
+    @property
+    def name(self):
         """
         Return board name
         """
-        return self.name
+        return self._name
 
-    def getInfo(self):
+    @property
+    def description(self):
         """
         Return info on the board
         """

@@ -78,7 +78,8 @@ class Target(Notifier):
         self.root_target = None
         self.part_number = ""
         self.memory_map = memoryMap or MemoryMap()
-        self.halt_on_connect = True
+        self.halt_on_connect = session.options.get('halt_on_connect', True)
+        self.do_auto_unlock = session.options.get('auto_unlock', True)
         self.has_fpu = False
         self._svd_location = None
         self._svd_device = None
@@ -88,7 +89,7 @@ class Target(Notifier):
         return self._svd_device
 
     def setAutoUnlock(self, doAutoUnlock):
-        pass
+        self.do_auto_unlock = doAutoUnlock
 
     def isLocked(self):
         return False

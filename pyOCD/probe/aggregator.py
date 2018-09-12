@@ -37,7 +37,7 @@ class DebugProbeAggregator(object):
         return probes
     
     @classmethod
-    def get_probe_with_id(unique_id):
+    def get_probe_with_id(cls, unique_id):
         for cls in PROBE_CLASSES:
             probe = cls.get_probe_with_id(unique_id)
             if probe is not None:

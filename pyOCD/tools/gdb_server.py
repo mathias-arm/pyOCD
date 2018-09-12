@@ -18,6 +18,7 @@
 
 from __future__ import print_function
 import sys
+import os
 import logging
 import traceback
 import argparse
@@ -26,6 +27,7 @@ import pkg_resources
 
 from .. import __version__
 from .. import target
+from ..core.session import Session
 from ..core.helpers import ConnectHelper
 from ..debug.svd import isCmsisSvdAvailable
 from ..gdbserver import GDBServer
@@ -244,20 +246,23 @@ class GDBServerTool(object):
                 }
 
             for name in supported_targets:
-                t = target.TARGET[name](None)
+                s = Session(None) # Create empty session
+                t = target.TARGET[name](s)
                 d = {
                     'name' : name,
                     'part_number' : t.part_number,
                     }
                 if t._svd_location is not None and isCmsisSvdAvailable:
                     if t._svd_location.is_local:
-                        d['svd_path'] = t._svd_location.filename
+                        svdPath = t._svd_location.filename
                     else:
                         resource = "data/{vendor}/{filename}".format(
                             vendor=t._svd_location.vendor,
                             filename=t._svd_location.filename
                         )
-                        d['svd_path'] = pkg_resources.resource_filename("cmsis_svd", resource)
+                        svdPath = pkg_resources.resource_filename("cmsis_svd", resource)
+                    if os.path.exists(svdPath):
+                        d['svd_path'] = svdPath
                 targets.append(d)
 
             print(json.dumps(obj, indent=4))

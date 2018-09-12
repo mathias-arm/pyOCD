@@ -611,12 +611,13 @@ class PyOCDTool(object):
                             board_id=self.args.board,
                             target_override=self.args.target,
                             init_board=False,
+                            auto_unlock=False,
+                            halt_on_connect=self.args.halt,
+                            resume_on_disconnect=False,
                             frequency=(self.args.clock * 1000))
             if self.session is None:
                 return 1
             self.board = self.session.board
-            self.board.target.setAutoUnlock(False)
-            self.board.target.setHaltOnConnect(self.args.halt)
             try:
                 if not self.args.no_init:
                     self.session.open()

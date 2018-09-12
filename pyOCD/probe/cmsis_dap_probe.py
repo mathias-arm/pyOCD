@@ -206,7 +206,16 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
     def read_reg(self, reg_id, dap_index=0, now=True):
         """Read a single word to a DP or AP register"""
         try:
-            return self._link.read_reg(reg_id, dap_index, now)
+            result = self._link.read_reg(reg_id, dap_index, now)
+            
+            # Need to wrap the deferred callback to convert exceptions.
+            def read_reg_cb():
+                try:
+                    return result()
+                except DAPAccess.Error as exc:
+                    six.raise_from(self._convert_exception(exc), exc)
+            
+            return result if now else read_reg_cb
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
@@ -220,7 +229,16 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
     def reg_read_repeat(self, num_repeats, reg_id, dap_index=0, now=True):
         """Read one or more words from the same DP or AP register"""
         try:
-            return self._link.reg_read_repeat(num_repeats, reg_id, dap_index, now)
+            result = self._link.reg_read_repeat(num_repeats, reg_id, dap_index, now)
+
+            # Need to wrap the deferred callback to convert exceptions.
+            def read_reg_cb():
+                try:
+                    return result()
+                except DAPAccess.Error as exc:
+                    six.raise_from(self._convert_exception(exc), exc)
+
+            return result if now else read_reg_cb
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
   

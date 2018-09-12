@@ -25,7 +25,7 @@ parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parentdir)
 
 import pyOCD
-from pyOCD.board import MbedBoard
+from pyOCD.core.helpers import ConnectHelper
 from pyOCD.utility.conversion import float32beToU32be
 from test_util import Test
 import logging
@@ -38,13 +38,12 @@ def run_basic_test(board_id):
     return basic_test(board_id, None)
 
 def basic_test(board_id, file):
-    with MbedBoard.chooseBoard(board_id=board_id) as board:
+    with ConnectHelper.session_with_chosen_probe(unique_id=board_id) as session:
+        board = session.board
         addr = 0
         size = 0
         f = None
         binary_file = "l1_"
-
-        target_type = board.target_type()
 
         if file is None:
             binary_file = os.path.join(parentdir, 'binaries', board.test_binary)
@@ -64,9 +63,7 @@ def basic_test(board_id, file):
         addr_flash = rom_region.start + rom_region.length // 2
 
         target = board.target
-        link = board.link
         flash = board.flash
-
 
         print("\n\n------ GET Unique ID ------")
         print("Unique ID: %s" % board.unique_id)

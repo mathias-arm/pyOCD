@@ -28,7 +28,7 @@ parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parentdir)
 
 import pyOCD
-from pyOCD.board import MbedBoard
+from pyOCD.core.helpers import ConnectHelper
 from pyOCD.pyDAPAccess import DAPAccess
 from pyOCD.utility.conversion import float32beToU32be
 from pyOCD.flash.flash import Flash
@@ -123,7 +123,8 @@ def same(d1, d2):
 
 
 def flash_test(board_id):
-    with MbedBoard.chooseBoard(board_id=board_id, frequency=1000000) as board:
+    with ConnectHelper.session_with_chosen_probe(board_id=board_id, frequency=1000000) as session:
+        board = session.board
         target_type = board.target_type
 
         test_clock = 10000000
@@ -142,13 +143,11 @@ def flash_test(board_id):
         ram_size = ram_region.length
 
         target = board.target
-        link = board.link
         flash = board.flash
         
         flash_info = flash.getFlashInfo()
 
-        link.set_clock(test_clock)
-        link.set_deferred_transfer(True)
+        session.probe.set_clock(test_clock)
 
         test_pass_count = 0
         test_count = 0
@@ -399,8 +398,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=level)
     DAPAccess.set_args(args.daparg)
     # Set to debug to print some of the decisions made while flashing
-    board = pyOCD.board.mbed_board.MbedBoard.getAllConnectedBoards(close=True)[0]
+    session = ConnectHelper.get_sessions_for_all_connected_probes()[0]
     test = FlashTest()
-    result = [test.run(board)]
+    result = [test.run(session.board)]
     test.print_perf_info(result)
 

@@ -23,8 +23,10 @@ parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parentdir)
 
 import pyOCD
-from pyOCD.board import MbedBoard
+from pyOCD.core.session import Session
+from pyOCD.core.helpers import ConnectHelper
 from pyOCD.utility.conversion import float32beToU32be
+from pyOCD.probe.aggregator import DebugProbeAggregator
 import logging
 from time import time
 from test_util import (TestResult, Test, IOTee, RecordingLogHandler)
@@ -157,7 +159,10 @@ def print_board_header(outputFile, board, n, includeDividers=True, includeLeadin
 # @param logToConsole Boolean indicating whether output should be copied to sys.stdout.
 # @param commonLogFile If not None, an open file object to which output should be copied.
 def test_board(board_id, n, loglevel, logToConsole, commonLogFile):
-    board = MbedBoard.chooseBoard(board_id=board_id, open_board=False)
+    probe = DebugProbeAggregator.get_probe_with_id(board_id)
+    assert probe is not None
+    session = Session(probe)
+    board = session.board
 
     originalStdout = sys.stdout
     originalStderr = sys.stderr
@@ -265,7 +270,7 @@ def main():
     result_list = []
 
     # Put together list of boards to test
-    board_list = MbedBoard.getAllConnectedBoards(close=True, blocking=False)
+    board_list = ConnectHelper.get_all_connected_probes(blocking=False)
     board_id_list = sorted(b.unique_id for b in board_list)
 
     # If only 1 job was requested, don't bother spawning processes.

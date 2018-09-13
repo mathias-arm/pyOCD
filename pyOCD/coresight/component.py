@@ -14,24 +14,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
-log = logging.getLogger("component")
-
 ## @brief CoreSight component base class.
 #
 # x
 class CoreSightComponent(object):
     ## @brief Constructor.
     #
-    def __init__(self, ap, cmpid=None, addr=None):
-        self._ap = ap
+    def __init__(self, session, memoryInterface, cmpid=None, addr=None):
+        self._session = session
+        self._mem = memoryInterface
         self._cmpid = cmpid
         self._address = addr or (cmpid.address if cmpid else None)
+
+    @property
+    def session(self):
+        return self._session
     
     @property
-    def ap(self):
-        return self._ap
+    def memory_interface(self):
+        return self._mem
     
     @property
     def cmpid(self):

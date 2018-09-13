@@ -16,6 +16,7 @@
 """
 
 from .target import Target
+from .dap_controller import DAPInterfaceController
 from ..coresight import (dap, cortex_m, rom_table)
 from ..debug.svd import (SVDFile, SVDLoader)
 from ..debug.context import DebugContext
@@ -44,7 +45,6 @@ class CoreSightTarget(Target):
         self.root_target = self
         self.part_number = self.__class__.__name__
         self.cores = {}
-        self.dp = dap.DebugPort(session.probe, self)
         self._selected_core = 0
         self._svd_load_thread = None
         self._root_contexts = {}
@@ -76,7 +76,10 @@ class CoreSightTarget(Target):
 
     @property
     def aps(self):
-        return self.dp.aps
+        if isinstance(self.session.controller, DAPInterfaceController):
+            return self.session.controller.dp.aps
+        else:
+            return None
 
     @property
     ## @brief Waits for SVD file to complete loading before returning.
@@ -108,13 +111,6 @@ class CoreSightTarget(Target):
     def create_init_sequence(self):
         seq = CallSequence(
             ('load_svd',            self.loadSVD),
-            ('dp_init',             self.dp.init),
-            ('power_up',            self.dp.power_up_debug),
-            ('find_aps',            self.dp.find_aps),
-            ('create_aps',          self.dp.create_aps),
-            ('init_ap_roms',        self.dp.init_ap_roms),
-            ('create_cores',        self.create_cores),
-            ('create_components',   self.create_components),
             ('notify',              lambda : self.notify(Notification(event=Target.EVENT_POST_CONNECT, source=self)))
             )
         
@@ -125,51 +121,14 @@ class CoreSightTarget(Target):
         seq = self.create_init_sequence()
         seq.invoke()
     
-    def _create_component(self, cmpid):
-        cmp = cmpid.factory(cmpid.ap, cmpid, cmpid.address)
-        cmp.init()
-
-    def create_cores(self):
-        self._new_core_num = 0
-        self._apply_to_all_components(self._create_component, filter=lambda c: c.factory == cortex_m.CortexM.factory)
-
-    def create_components(self):
-        self._apply_to_all_components(self._create_component, filter=lambda c: c.factory is not None and c.factory != cortex_m.CortexM.factory)
-    
-    def _apply_to_all_components(self, action, filter=None):
-        def scan_rom_table(tbl):
-            for component in tbl.components:
-                # Recurse into child ROM tables.
-                if isinstance(component, rom_table.ROMTable):
-                    scan_rom_table(component)
-                    continue
-                
-                # Skip component if the filter returns False.
-                if filter is not None and not filter(component):
-                    continue
-                
-                # Perform the action.
-                action(component)
-                
-        # Iterate over every top-level ROM table.
-        for ap in [x for x in self.dp.aps.values() if x.has_rom_table]:
-            scan_rom_table(ap.rom_table)
-
     def disconnect(self, resume=True):
         self.notify(Notification(event=Target.EVENT_PRE_DISCONNECT, source=self))
         for core in self.cores.values():
             core.disconnect(resume)
-        self.dp.power_down_debug()
-
-    def readIDCode(self):
-        return self.dp.dpidr
 
     @property
     def run_token(self):
         return self.selected_core.run_token
-
-    def flush(self):
-        self.dp.flush()
 
     def halt(self):
         return self.selected_core.halt()

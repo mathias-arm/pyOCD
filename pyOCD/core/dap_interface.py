@@ -14,8 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .dap_controller import DAPInterfaceController
+
 ## @brief Abstract interface for DP and AP register access.
 class DAPInterface(object):
+
+    @property
+    def controller_class(self):
+        return DAPInterfaceController
 
     ## @brief Write a single word to a DP or AP register.
     def write_reg(self, reg_id, value, dap_index=0):

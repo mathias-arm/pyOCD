@@ -73,7 +73,7 @@ class Target(Notifier):
 
     def __init__(self, session, memoryMap=None):
         super(Target, self).__init__()
-        self.session = session
+        self._session = session
         self.flash = None
         self.root_target = None
         self.part_number = ""
@@ -83,6 +83,10 @@ class Target(Notifier):
         self.has_fpu = False
         self._svd_location = None
         self._svd_device = None
+
+    @property
+    def session(self):
+        return self._session
 
     @property
     def svd_device(self):
@@ -111,9 +115,6 @@ class Target(Notifier):
 
     def flush(self):
         self.session.probe.flush()
-
-    def readIDCode(self):
-        raise NotImplementedError()
 
     def halt(self):
         raise NotImplementedError()

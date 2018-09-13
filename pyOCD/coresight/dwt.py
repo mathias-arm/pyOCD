@@ -55,14 +55,14 @@ class DWT(CoreSightComponent):
     WATCH_SIZE_TO_MASK = dict((2**i, i) for i in range(0,32))
 
     @classmethod
-    def factory(cls, ap, cmpid, address):
-        dwt = cls(ap, cmpid, address)
-        assert ap.core
-        ap.core.connect(dwt)
+    def factory(cls, session, memoryInterface, cmpid, address):
+        dwt = cls(session, memoryInterface, cmpid, address)
+        assert cmpid.rom_table.core
+        cmpid.rom_table.core.connect(dwt)
         return dwt
 
-    def __init__(self, ap, cmpid=None, addr=None):
-        super(DWT, self).__init__(ap, cmpid, addr)
+    def __init__(self, session, memoryInterface, cmpid=None, addr=None):
+        super(DWT, self).__init__(session, memoryInterface, cmpid, addr)
         assert self.address == DWT.DWT_CTRL, "Unexpected DWT base address 0x%08x" % self.address
         self.watchpoints = []
         self.watchpoint_used = 0
@@ -73,15 +73,15 @@ class DWT(CoreSightComponent):
     # Reads the number of hardware watchpoints available on the core  and makes sure that they
     # are all disabled and ready for future use.
     def init(self):
-        demcr = self.ap.readMemory(DEMCR)
+        demcr = self._mem.readMemory(DEMCR)
         demcr = demcr | DEMCR_TRCENA
-        self.ap.writeMemory(DEMCR, demcr)
-        dwt_ctrl = self.ap.readMemory(DWT.DWT_CTRL)
+        self._mem.writeMemory(DEMCR, demcr)
+        dwt_ctrl = self._mem.readMemory(DWT.DWT_CTRL)
         watchpoint_count = (dwt_ctrl >> 28) & 0xF
         logging.info("%d hardware watchpoints", watchpoint_count)
         for i in range(watchpoint_count):
             self.watchpoints.append(Watchpoint(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i, self))
-            self.ap.writeMemory(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i + DWT.DWT_FUNCTION_OFFSET, 0)
+            self._mem.writeMemory(DWT.DWT_COMP_BASE + DWT.DWT_COMP_BLOCK_SIZE*i + DWT.DWT_FUNCTION_OFFSET, 0)
         self.dwt_configured = True
 
     def find_watchpoint(self, addr, size, type):
@@ -114,13 +114,13 @@ class DWT(CoreSightComponent):
                     return False
 
                 mask = DWT.WATCH_SIZE_TO_MASK[size]
-                self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET, mask)
-                if self.ap.readMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET) != mask:
+                self._mem.writeMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET, mask)
+                if self._mem.readMemory(watch.comp_register_addr + DWT.DWT_MASK_OFFSET) != mask:
                     logging.error('Watchpoint of size %d not supported by device', size)
                     return False
 
-                self.ap.writeMemory(watch.comp_register_addr, addr)
-                self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, watch.func)
+                self._mem.writeMemory(watch.comp_register_addr, addr)
+                self._mem.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, watch.func)
                 self.watchpoint_used += 1
                 return True
 
@@ -134,6 +134,6 @@ class DWT(CoreSightComponent):
             return
 
         watch.func = 0
-        self.ap.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, 0)
+        self._mem.writeMemory(watch.comp_register_addr + DWT.DWT_FUNCTION_OFFSET, 0)
         self.watchpoint_used -= 1
 

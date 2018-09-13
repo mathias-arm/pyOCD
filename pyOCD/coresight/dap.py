@@ -55,9 +55,9 @@ class DebugPort(object):
     # DAP log file name.
     DAP_LOG_FILE = "pyocd_dap.log"
 
-    def __init__(self, link, target):
+    def __init__(self, link, session):
         self.link = link
-        self.target = target
+        self.session = session
         self.valid_aps = None
         self.aps = {}
         self._csw = {}

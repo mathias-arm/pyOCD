@@ -32,14 +32,14 @@ class FPB(BreakpointProvider, CoreSightComponent):
     FP_COMP0 = 0xE0002008
     
     @classmethod
-    def factory(cls, ap, cmpid, address):
-        fpb = cls(ap, cmpid, address)
-        assert ap.core
-        ap.core.connect(fpb)
+    def factory(cls, session, memoryInterface, cmpid, address):
+        fpb = cls(session, memoryInterface, cmpid, address)
+        assert cmpid.rom_table.core
+        cmpid.rom_table.core.connect(fpb)
         return fpb
 
-    def __init__(self, ap, cmpid=None, addr=None):
-        CoreSightComponent.__init__(self, ap, cmpid, addr)
+    def __init__(self, session, memoryInterface, cmpid=None, addr=None):
+        CoreSightComponent.__init__(self, session, memoryInterface, cmpid, addr)
         BreakpointProvider.__init__(self)
         assert self.address == FPB.FP_CTRL, "Unexpected FPB base address 0x%08x" % self.address
         self.hw_breakpoints = []
@@ -54,7 +54,7 @@ class FPB(BreakpointProvider, CoreSightComponent):
     # (Flash Patch and Breakpoint Unit), which will be enabled when the first breakpoint is set.
     def init(self):
         # setup FPB (breakpoint)
-        fpcr = self.ap.readMemory(FPB.FP_CTRL)
+        fpcr = self._mem.readMemory(FPB.FP_CTRL)
         self.nb_code = ((fpcr >> 8) & 0x70) | ((fpcr >> 4) & 0xF)
         self.nb_lit = (fpcr >> 7) & 0xf
         logging.info("%d hardware breakpoints, %d literal comparators", self.nb_code, self.nb_lit)
@@ -64,19 +64,19 @@ class FPB(BreakpointProvider, CoreSightComponent):
         # disable FPB (will be enabled on first bp set)
         self.disable()
         for bp in self.hw_breakpoints:
-            self.ap.writeMemory(bp.comp_register_addr, 0)
+            self._mem.writeMemory(bp.comp_register_addr, 0)
 
     def bp_type(self):
         return Target.BREAKPOINT_HW
 
     def enable(self):
-        self.ap.writeMemory(FPB.FP_CTRL, FPB.FP_CTRL_KEY | 1)
+        self._mem.writeMemory(FPB.FP_CTRL, FPB.FP_CTRL_KEY | 1)
         self.enabled = True
         logging.debug('fpb has been enabled')
         return
 
     def disable(self):
-        self.ap.writeMemory(FPB.FP_CTRL, FPB.FP_CTRL_KEY | 0)
+        self._mem.writeMemory(FPB.FP_CTRL, FPB.FP_CTRL_KEY | 0)
         self.enabled = False
         logging.debug('fpb has been disabled')
         return
@@ -105,7 +105,7 @@ class FPB(BreakpointProvider, CoreSightComponent):
                 bp_match = (1 << 30)
                 if addr & 0x2:
                     bp_match = (2 << 30)
-                self.ap.writeMemory(bp.comp_register_addr, addr & 0x1ffffffc | bp_match | 1)
+                self._mem.writeMemory(bp.comp_register_addr, addr & 0x1ffffffc | bp_match | 1)
                 bp.addr = addr
                 self.num_hw_breakpoint_used += 1
                 return bp
@@ -116,7 +116,7 @@ class FPB(BreakpointProvider, CoreSightComponent):
         for hwbp in self.hw_breakpoints:
             if hwbp.enabled and hwbp.addr == bp.addr:
                 hwbp.enabled = False
-                self.ap.writeMemory(hwbp.comp_register_addr, 0)
+                self._mem.writeMemory(hwbp.comp_register_addr, 0)
                 self.num_hw_breakpoint_used -= 1
                 return
 

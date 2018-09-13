@@ -166,8 +166,10 @@ COMPONENT_MAP = {
 # in the memory map of all CoreSight components. The various fields from these
 # registers are made available as attributes.
 class CoreSightComponentID(object):
-    def __init__(self, ap, top_addr):
-        self.ap = ap
+    def __init__(self, romTable, top_addr):
+        self.rom_table = romTable
+        self.apsel = romTable.apsel
+        self.mem = romTable.memory_interface
         self.address = top_addr
         self.top_address = top_addr
         self.component_class = 0
@@ -187,7 +189,7 @@ class CoreSightComponentID(object):
     def read_id_registers(self):
         # Read Component ID, Peripheral ID, and DEVID/DEVARCH registers. This is done as a single
         # block read for performance reasons.
-        regs = self.ap.readBlockMemoryAligned32(self.top_address + IDR_READ_START, IDR_READ_COUNT)
+        regs = self.mem.readBlockMemoryAligned32(self.top_address + IDR_READ_START, IDR_READ_COUNT)
         self.cidr = self._extract_id_register_value(regs, CIDR0_OFFSET)
         self.pidr = (self._extract_id_register_value(regs, PIDR4_OFFSET) << 32) | self._extract_id_register_value(regs, PIDR0_OFFSET)
 
@@ -251,15 +253,15 @@ class CoreSightComponentID(object):
 
 
 class ROMTable(CoreSightComponent):
-    def __init__(self, ap, cmpid=None, addr=None, parent_table=None):
+    def __init__(self, session, memoryInterface, cmpid=None, addr=None, apsel=0, parent_table=None):
         # If no table address is provided, use the root ROM table for the AP.
-        if addr is None:
-            addr = ap.rom_addr
-        super(ROMTable, self).__init__(ap, cmpid, addr)
+        super(ROMTable, self).__init__(session, memoryInterface, cmpid, addr)
+        self.apsel = apsel
         self.parent = parent_table
         self.number = (self.parent.number + 1) if self.parent else 0
         self.components = []
         self.name = 'ROM'
+        self.core = None
     
     @property
     def depth_indent(self):
@@ -267,7 +269,7 @@ class ROMTable(CoreSightComponent):
 
     def init(self):
         if self.cmpid is None:
-            self.cmpid = CoreSightComponentID(self.ap, self.address)
+            self.cmpid = CoreSightComponentID(self, self.address)
             self.cmpid.read_id_registers()
         if not self.cmpid.is_rom_table:
             logging.warning("Warning: ROM table @ 0x%08x has unexpected CIDR component class (0x%x)", self.address, self.cmpid.component_class)
@@ -276,7 +278,7 @@ class ROMTable(CoreSightComponent):
 
     def read_table(self):
         logging.info("%sAP#%d ROM table #%d @ 0x%08x (designer=%03x part=%03x)",
-            self.depth_indent, self.ap.ap_num, self.number, self.address, self.cmpid.designer, self.cmpid.part)
+            self.depth_indent, self.apsel, self.number, self.address, self.cmpid.designer, self.cmpid.part)
         self.components = []
 
         entryAddress = self.address
@@ -285,7 +287,7 @@ class ROMTable(CoreSightComponent):
         while not foundEnd and entriesRead < ROM_TABLE_MAX_ENTRIES:
             # Read several entries at a time for performance.
             readCount = min(ROM_TABLE_MAX_ENTRIES - entriesRead, ROM_TABLE_ENTRY_READ_COUNT)
-            entries = self.ap.readBlockMemoryAligned32(entryAddress, readCount)
+            entries = self._mem.readBlockMemoryAligned32(entryAddress, readCount)
             entriesRead += readCount
 
             for entry in entries:
@@ -312,19 +314,33 @@ class ROMTable(CoreSightComponent):
         address = self.address + offset
 
         # Create component instance.
-        cmpid = CoreSightComponentID(self.ap, address)
+        cmpid = CoreSightComponentID(self, address)
         cmpid.read_id_registers()
 
         logging.info("%s[%d]%s", self.depth_indent, len(self.components), str(cmpid))
 
         # Recurse into child ROM tables.
         if cmpid.is_rom_table:
-            cmp = ROMTable(self.ap, cmpid, address, parent_table=self)
+            cmp = ROMTable(self.session, self.memory_interface, cmpid, address, self.apsel, parent_table=self)
             cmp.init()
         else:
             cmp = cmpid
 
         if cmp is not None:
             self.components.append(cmp)
+
+    def for_each(self, action, filter=None):
+        for component in self.components:
+            # Recurse into child ROM tables.
+            if isinstance(component, ROMTable):
+                component.for_each(action, filter)
+                continue
+            
+            # Skip component if the filter returns False.
+            if filter is not None and not filter(component):
+                continue
+            
+            # Perform the action.
+            action(component)
 
 

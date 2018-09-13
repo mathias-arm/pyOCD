@@ -36,7 +36,6 @@ from .. import __version__
 from .. import (utility, coresight)
 from ..core.helpers import ConnectHelper
 from ..core import exceptions
-from ..board import MbedBoard
 from ..target.family import target_kinetis
 from ..pyDAPAccess import DAPAccess
 from ..probe.debug_probe import DebugProbe
@@ -1211,7 +1210,7 @@ class PyOCDTool(object):
 
     def handle_show_target(self, args):
         print("Target:       %s" % self.target.part_number)
-        print("DAP IDCODE:   0x%08x" % self.target.readIDCode())
+#         print("DAP IDCODE:   0x%08x" % self.target.readIDCode())
 
     def handle_show_cores(self, args):
         if self.target.isLocked():

@@ -63,6 +63,10 @@ class Session(object):
         # Update options.
         self._options = options or {}
         self._options.update(kwargs)
+
+        # Create controller instance.
+        controllerClass = self._probe.controller_class
+        self._controller = controllerClass(self)
         
         # Create the board instance if we have a valid probe.
         if probe is not None:
@@ -79,6 +83,10 @@ class Session(object):
     @property
     def probe(self):
         return self._probe
+    
+    @property
+    def controller(self):
+        return self._controller
     
     @property
     def board(self):
@@ -100,9 +108,17 @@ class Session(object):
     def open(self):
         if not self._inited:
             assert self._probe is not None
+            assert self._controller is not None
+            
+            # Open the probe.
             self._probe.open()
             self._probe.set_clock(self._options.get('frequency', DEFAULT_CLOCK_FREQ))
-            self._board.init()
+            
+            # Init the controller and perform the connect sequence.
+            self._controller.init()
+            seq = self._controller.connect()
+            seq.invoke()
+            
             self._inited = True
             self._closed = False
 
@@ -115,7 +131,9 @@ class Session(object):
         log.debug("uninit session %s", self)
         if self._inited:
             try:
-                self.board.uninit()
+                seq = self._controller.disconnect()
+                seq.invoke()
+                
                 self._inited = False
             except:
                 log.error("exception during board uninit:", exc_info=True)

@@ -149,7 +149,10 @@ class JLinkProbe(DebugProbe, DAPInterface):
     # TODO remove
     def swj_sequence(self):
         """Send sequence to activate JTAG or SWD on the target"""
-        pass
+        try:
+            self._link.swj_sequence()
+        except JLinkError as exc:
+            six.raise_from(self._convert_exception(exc), exc)
 
     def disconnect(self):
         """Deinitialize the DAP I/O pins"""
@@ -202,25 +205,32 @@ class JLinkProbe(DebugProbe, DAPInterface):
     def write_reg(self, reg_id, value, dap_index=0):
         """Write a single word to a DP or AP register"""
         try:
-            return self._link.write_reg(reg_id, value, dap_index)
+            ack = self._link.write_reg(reg_id, value, dap_index)
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
+        else:
+            if ack == 1:
+                raise exceptions.TransferFaultError()
+            elif ack == 2:
+                raise exceptions.TransferError()
 
     def read_reg(self, reg_id, dap_index=0, now=True):
         """Read a single word to a DP or AP register"""
         try:
-            result = self._link.read_reg(reg_id, dap_index, now)
+            ack, value, parityOk = self._link.read_reg(reg_id, dap_index, now)
             
-            # Need to wrap the deferred callback to convert exceptions.
-            def read_reg_cb():
-                try:
-                    return result()
-                except JLinkError as exc:
-                    six.raise_from(self._convert_exception(exc), exc)
-            
-            return result if now else read_reg_cb
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
+        else:
+            if ack == 1:
+                raise exceptions.TransferFaultError()
+            elif ack == 2 or not parityOk:
+                raise exceptions.TransferError()
+            
+            def read_reg_cb():
+                return value
+        
+            return value if now else read_reg_cb
 
     def reg_write_repeat(self, num_repeats, reg_id, data_array, dap_index=0):
         """Write one or more words to the same DP or AP register"""

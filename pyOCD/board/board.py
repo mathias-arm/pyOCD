@@ -75,11 +75,12 @@ class Board(object):
     
     @property
     def name(self):
-        return "board"
+        return "generic"
     
     @property
     def description(self):
-        return self.name
+        return "Generic board via " + self.session.probe.vendor_name + " " \
+                + self.session.probe.product_name + " [" + self.target_type + "]"
 
     # Deprecated methods...
     

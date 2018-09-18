@@ -226,8 +226,8 @@ class GDBServerTool(object):
                     'info' : mbed.board.description,
                     'board_name' : mbed.board.name,
                     'target' : mbed.board.target_type,
-                    'vendor_name' : '',
-                    'product_name' : '',
+                    'vendor_name' : mbed.probe.vendor_name,
+                    'product_name' : mbed.probe.product_name,
                     }
                 boards.append(d)
 

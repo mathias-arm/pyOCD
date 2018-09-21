@@ -81,14 +81,14 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     
     def open(self):
         try:
-#             self._link.open()
+            self._link.open()
             self._is_open = True
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
     
     def close(self):
         try:
-            self._link.clean_exit()
+            self._link.close()
             self._is_open = False
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)

@@ -45,21 +45,23 @@ import logging
 log = logging.getLogger('stlink.usb')
 
 class StlinkUsbInterface(object):
-    STLINK_CMD_SIZE_V2 = 16
+    V2_CMD_SIZE = 16
 
     DEV_TYPES = [
         {
-            'version': 'V2',
-            'idVendor': 0x0483,
-            'idProduct': 0x3748,
-            'outPipe': 0x02,
-            'inPipe': 0x81,
+            'version':      'V2',
+            'idVendor':     0x0483,
+            'idProduct':    0x3748,
+            'outPipe':      0x02,
+            'inPipe':       0x81,
+            'tracePipe':    0x83,
         }, {
-            'version': 'V2-1',
-            'idVendor': 0x0483,
-            'idProduct': 0x374b,
-            'outPipe': 0x01,
-            'inPipe': 0x81,
+            'version':      'V2-1',
+            'idVendor':     0x0483,
+            'idProduct':    0x374b,
+            'outPipe':      0x01,
+            'inPipe':       0x81,
+            'tracePipe':    0x82,
         }
     ]
 
@@ -119,7 +121,7 @@ class StlinkUsbInterface(object):
         return self._xfer_counter
 
     def _write(self, data, tout=200):
-#         log.debug("  USB > %s" % ' '.join(['%02x' % i for i in data]))
+        log.debug("  USB > %s" % ' '.join(['%02x' % i for i in data]))
         self._xfer_counter += 1
         count = self._dev.write(self._dev_type['outPipe'], data, tout)
         if count != len(data):
@@ -133,16 +135,16 @@ class StlinkUsbInterface(object):
             read_size += 3
             read_size &= 0xffc
         data = self._dev.read(self._dev_type['inPipe'], read_size, tout).tolist()
-#         log.debug("  USB < %s" % ' '.join(['%02x' % i for i in data]))
+        log.debug("  USB < %s" % ' '.join(['%02x' % i for i in data]))
         return data[:size]
 
     def xfer(self, cmd, data=None, rx_len=None, retry=0, tout=200):
         while (True):
             try:
-                if len(cmd) > self.STLINK_CMD_SIZE_V2:
-                    raise StlinkException("Error too many Bytes in command: %d, maximum is %d" % (len(cmd), self.STLINK_CMD_SIZE_V2))
+                if len(cmd) > self.V2_CMD_SIZE:
+                    raise StlinkException("Error too many Bytes in command: %d, maximum is %d" % (len(cmd), self.V2_CMD_SIZE))
                 # pad to 16 bytes
-                cmd += [0] * (self.STLINK_CMD_SIZE_V2 - len(cmd))
+                cmd += [0] * (self.V2_CMD_SIZE - len(cmd))
                 self._write(cmd, tout)
                 if data:
                     self._write(data, tout)

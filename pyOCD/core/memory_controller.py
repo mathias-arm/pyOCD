@@ -19,9 +19,6 @@ from ..coresight import (cortex_m, fpb, dwt, rom_table)
 from ..utility.sequencer import CallSequence
 
 ROM_BASE = 0xe00ff000
-SCS_BASE = 0xe000e000
-DWT_BASE = 0xe0001000
-FPB_BASE = 0xe0002000
 
 # Debug Exception and Monitor Control Register
 DEMCR = 0xE000EDFC
@@ -51,6 +48,7 @@ class MemoryInterfaceController(InterfaceController):
             )
 
     def create_rom_table(self):
+        # Turn on TRCENA so we can read all ROM table entries.
         try:
             demcr = self.probe.read32(DEMCR)
             self.probe.write32(DEMCR, demcr | DEMCR_TRCENA)

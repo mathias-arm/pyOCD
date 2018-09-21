@@ -58,41 +58,19 @@ class Stlink(object):
     STLINK_MODE_BOOTLOADER = 0x04
 
     STLINK_DFU_EXIT = 0x07
-
-    STLINK_SWIM_ENTER = 0x00
     STLINK_SWIM_EXIT = 0x01
 
-    STLINK_DEBUG_ENTER_JTAG = 0x00
     STLINK_DEBUG_STATUS = 0x01
-    STLINK_DEBUG_FORCEDEBUG = 0x02
-    STLINK_DEBUG_APIV1_RESETSYS = 0x03
-    STLINK_DEBUG_APIV1_READALLREGS = 0x04
-    STLINK_DEBUG_APIV1_READREG = 0x05
-    STLINK_DEBUG_APIV1_WRITEREG = 0x06
     STLINK_DEBUG_READMEM_32BIT = 0x07
     STLINK_DEBUG_WRITEMEM_32BIT = 0x08
-    STLINK_DEBUG_RUNCORE = 0x09
-    STLINK_DEBUG_STEPCORE = 0x0a
-    STLINK_DEBUG_APIV1_SETFP = 0x0b
     STLINK_DEBUG_READMEM_8BIT = 0x0c
     STLINK_DEBUG_WRITEMEM_8BIT = 0x0d
-    STLINK_DEBUG_APIV1_CLEARFP = 0x0e
-    STLINK_DEBUG_APIV1_WRITEDEBUGREG = 0x0f
-    STLINK_DEBUG_APIV1_SETWATCHPOINT = 0x10
-    STLINK_DEBUG_APIV1_ENTER = 0x20
     STLINK_DEBUG_EXIT = 0x21
-    STLINK_DEBUG_READCOREID = 0x22
     STLINK_DEBUG_APIV2_ENTER = 0x30
     STLINK_DEBUG_APIV2_READ_IDCODES = 0x31
     STLINK_DEBUG_APIV2_RESETSYS = 0x32
-    STLINK_DEBUG_APIV2_READREG = 0x33
-    STLINK_DEBUG_APIV2_WRITEREG = 0x34
-    STLINK_DEBUG_APIV2_WRITEDEBUGREG = 0x35
-    STLINK_DEBUG_APIV2_READDEBUGREG = 0x36
-    STLINK_DEBUG_APIV2_READALLREGS = 0x3a
     STLINK_DEBUG_APIV2_GETLASTRWSTATUS = 0x3b
     STLINK_DEBUG_APIV2_DRIVE_NRST = 0x3c
-    STLINK_DEBUG_SYNC = 0x3e
     STLINK_DEBUG_APIV2_START_TRACE_RX = 0x40
     STLINK_DEBUG_APIV2_STOP_TRACE_RX = 0x41
     STLINK_DEBUG_APIV2_GET_TRACE_NB = 0x42
@@ -119,18 +97,18 @@ class Stlink(object):
     }
 
     STLINK_MAXIMUM_TRANSFER_SIZE = 1024
-
-    def __init__(self, connector, swd_frequency=1800000):
+    
+    def __init__(self, connector):
         self._connector = connector
+        self._coreid = None
         self.read_version()
-        self.leave_state()
+    
+    def open(self):
         self.read_target_voltage()
-        if self._ver_jtag >= 22:
-            self.set_swd_freq(swd_frequency)
-#         self.enter_debug_swd()
-#         self.read_coreid()
 
-    def clean_exit(self):
+    def close(self):
+        self._leave_state()
+        
         # WORKAROUND for OS/X 10.11+
         # ... read from ST-Link, must be performed even times
         # call this function after last send command
@@ -154,9 +132,9 @@ class Stlink(object):
             self._ver_str += "S%d" % self._ver_swim
         if dev_ver == 'V2-1':
             self._ver_str += "M%d" % self._ver_mass
-        if self.ver_api == 1:
+        if self._ver_api == 1:
             raise log.warning("ST-Link/%s is not supported, please upgrade firmware." % self._ver_str)
-        if self.ver_jtag < 21:
+        if self._ver_jtag < 21:
             log.warning("ST-Link/%s is not recent firmware, please upgrade first - functionality is not guaranteed." % self._ver_str)
 
     @property
@@ -172,44 +150,19 @@ class Stlink(object):
         return self._ver_stlink
 
     @property
-    def ver_jtag(self):
-        return self._ver_jtag
-
-    @property
-    def ver_mass(self):
-        return self._ver_mass
-
-    @property
-    def ver_swim(self):
-        return self._ver_swim
-
-    @property
-    def ver_api(self):
-        return self._ver_api
-
-    @property
     def ver_str(self):
         return self._ver_str
+
+    @property
+    def target_voltage(self):
+        return self._target_voltage
 
     def read_target_voltage(self):
         rx = self._connector.xfer([Stlink.STLINK_GET_TARGET_VOLTAGE], rx_len=8)
         a0, a1 = struct.unpack('<II', bytearray(rx[:8]))
         self._target_voltage = 2 * a1 * 1.2 / a0 if a0 != 0 else None
 
-    @property
-    def target_voltage(self):
-        return self._target_voltage
-
-#     def read_coreid(self):
-#         rx = self._connector.xfer([Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_READCOREID], rx_len=4)
-# #         self._coreid = int.from_bytes(rx[:4], byteorder='little')
-#         self._coreid = struct.unpack('<L', rx[:4])
-# 
-#     @property
-#     def coreid(self):
-#         return self._coreid
-
-    def leave_state(self):
+    def _leave_state(self):
         rx = self._connector.xfer([Stlink.STLINK_GET_CURRENT_MODE], rx_len=2)
         if rx[0] == Stlink.STLINK_MODE_DFU:
             self._connector.xfer([Stlink.STLINK_DFU_COMMAND, Stlink.STLINK_DFU_EXIT])
@@ -219,6 +172,8 @@ class Stlink(object):
             self._connector.xfer([Stlink.STLINK_SWIM_COMMAND, Stlink.STLINK_SWIM_EXIT])
 
     def set_swd_freq(self, freq=1800000):
+        if self._ver_jtag < 22:
+            return
         for f, d in Stlink.STLINK_DEBUG_APIV2_SWD_SET_FREQ_MAP.items():
             if freq >= f:
                 rx = self._connector.xfer([Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_APIV2_SWD_SET_FREQ, d], rx_len=2)
@@ -228,6 +183,7 @@ class Stlink(object):
         raise StlinkException("Selected SWD frequency is too low")
 
     def enter_debug_swd(self):
+        self._leave_state()
         self._connector.xfer([Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_APIV2_ENTER, Stlink.STLINK_DEBUG_ENTER_SWD], rx_len=2)
 
     def debug_resetsys(self):
@@ -238,8 +194,8 @@ class Stlink(object):
         self._connector.xfer([Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_APIV2_DRIVE_NRST, value], rx_len=2)
 
     def read_mem32(self, addr, size):
-        assert (addr % 4) == 0, 'get_mem32: Address must be in multiples of 4'
-        assert (size % 4) == 0, 'get_mem32: Size must be in multiples of 4'
+        assert (addr % 4) == 0, 'read_mem32: Address must be in multiples of 4'
+        assert (size % 4) == 0, 'read_mem32: Size must be in multiples of 4'
 
         result = []
         while size:
@@ -254,8 +210,8 @@ class Stlink(object):
         return result
 
     def write_mem32(self, addr, data):
-        assert (addr % 4) == 0, 'set_mem32: Address must be in multiples of 4'
-        assert (len(data) % 4) == 0, 'set_mem32: Size must be in multiples of 4'
+        assert (addr % 4) == 0, 'write_mem32: Address must be in multiples of 4'
+        assert (len(data) % 4) == 0, 'write_mem32: Size must be in multiples of 4'
 
         while len(data):
             thisTransferSize = min(len(data), Stlink.STLINK_MAXIMUM_TRANSFER_SIZE)

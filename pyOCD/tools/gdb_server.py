@@ -297,7 +297,7 @@ class GDBServerTool(object):
                     with session:
                         # Set ELF if provided.
                         if self.args.elf:
-                            board.target.elf = self.args.elf
+                            session.board.target.elf = self.args.elf
                         baseTelnetPort = self.gdb_server_settings['telnet_port']
                         for core_number, core in session.board.target.cores.items():
                             self.gdb_server_settings['telnet_port'] = baseTelnetPort + core_number

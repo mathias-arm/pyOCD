@@ -36,7 +36,6 @@ from .. import __version__
 from .. import (utility, coresight)
 from ..core.helpers import ConnectHelper
 from ..core import exceptions
-from ..board import MbedBoard
 from ..target.family import target_kinetis
 from ..pyDAPAccess import DAPAccess
 from ..probe.debug_probe import DebugProbe

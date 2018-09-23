@@ -49,7 +49,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         
     @property
     def description(self):
-        return self.vendor_name + " " + self.product_name
+        return self.product_name
     
     @property
     def vendor_name(self):
@@ -62,7 +62,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     ## @brief Only valid after opening.
     @property
     def supported_wire_protocols(self):
-        return [DebugProbe.Protocol.DEFAULT, DebugProbe.Protocol.SWD]
+        return [DebugProbe.Protocol.DEFAULT, DebugProbe.Protocol.SWD, DebugProbe.Protocol.JTAG]
 
     @property
     def unique_id(self):
@@ -99,7 +99,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     def connect(self, protocol=None):
         """Initialize DAP IO pins for JTAG or SWD"""
         try:
-            self._link.enter_debug_swd()
+            self._link.enter_debug(stlinkv2.Stlink.Protocol.SWD)
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
@@ -111,7 +111,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     def disconnect(self):
         """Deinitialize the DAP I/O pins"""
         try:
-            self._link.leave_state()
+            self._link.enter_idle()
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
@@ -128,7 +128,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     def reset(self):
         """Reset the target"""
         try:
-            self._link.debug_resetsys()
+            self._link.target_reset()
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
@@ -159,7 +159,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         if transfer_size == 32:
             self._link.write_mem32(addr, conversion.u32leListToByteList([data]))
         elif transfer_size == 16:
-            self._link.write_mem8(addr, conversion.u16leListToByteList([data]))
+            self._link.write_mem16(addr, conversion.u16leListToByteList([data]))
         elif transfer_size == 8:
             self._link.write_mem8(addr, [data])
         else:
@@ -172,7 +172,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         if transfer_size == 32:
             result = conversion.byteListToU32leList(self._link.read_mem32(addr, 4))[0]
         elif transfer_size == 16:
-            result = conversion.byteListToU16leList(self._link.read_mem8(addr, 2))[0]
+            result = conversion.byteListToU16leList(self._link.read_mem16(addr, 2))[0]
         elif transfer_size == 8:
             result = self._link.read_mem8(addr, 1)[0]
         else:

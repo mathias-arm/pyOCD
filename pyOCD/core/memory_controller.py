@@ -15,6 +15,7 @@
 # limitations under the License.
 
 from .interface_controller import InterfaceController
+from . import exceptions
 from ..coresight import (cortex_m, fpb, dwt, rom_table)
 from ..utility.sequencer import CallSequence
 

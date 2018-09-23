@@ -64,16 +64,17 @@ class Session(object):
         self._options = options or {}
         self._options.update(kwargs)
 
-        # Create controller instance.
-        controllerClass = self._probe.controller_class
-        self._controller = controllerClass(self)
-        
-        # Create the board instance if we have a valid probe.
+        # Create the controller and board instances if we have a valid probe.
         if probe is not None:
+            # Create controller instance.
+            controllerClass = self._probe.controller_class
+            self._controller = controllerClass(self)
+
             # Ask the probe if it has an associated board, and if not then we create a generic one.
             self._board = probe.create_associated_board(self) \
                             or Board(self, self._options.get('target_override', None))
         else:
+            self._controller = None
             self._board = None
     
     @property

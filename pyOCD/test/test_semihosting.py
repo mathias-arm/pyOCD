@@ -37,10 +37,11 @@ def tgt(request):
         pytest.skip("No probe present")
         return
     board = session.board
+    session.options['resume_on_disconnect'] = False
     board.target.resetStopOnReset()
 
     def cleanup():
-        board.uninit(resume=False)
+        board.uninit()
 
     request.addfinalizer(cleanup)
     return board.target
@@ -64,7 +65,7 @@ def ramrgn(tgt):
     for rgn in map:
         if rgn.isRam:
             return rgn
-    pytest.fail("No RAM available to load test")
+    pytest.skip("No RAM available to load test")
 
 class TimeoutError(RuntimeError):
     pass

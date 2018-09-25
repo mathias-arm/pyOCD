@@ -161,15 +161,9 @@ class CoreSightTarget(Target):
             core.disconnect(resume)
         self.dp.power_down_debug()
 
-    def readIDCode(self):
-        return self.dp.dpidr
-
     @property
     def run_token(self):
         return self.selected_core.run_token
-
-    def flush(self):
-        self.dp.flush()
 
     def halt(self):
         return self.selected_core.halt()

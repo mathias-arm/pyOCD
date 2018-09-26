@@ -120,5 +120,22 @@ class DebugProbe(object):
         """Write out all unsent commands"""
         raise NotImplementedError()
 
+    def read_dp(self, addr, now=True):
+        raise NotImplementedError()
+
+    def write_dp(self, addr, data):
+        raise NotImplementedError()
+
+    def read_ap(self, addr, now=True):
+        raise NotImplementedError()
+
+    def write_ap(self, addr, data):
+        raise NotImplementedError()
+
+    def read_ap_multiple(self, addr, count=1, now=True):
+        raise NotImplementedError()
+
+    def write_ap_multiple(self, addr, values):
+        raise NotImplementedError()
   
 

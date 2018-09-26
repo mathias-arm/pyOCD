@@ -15,18 +15,18 @@
 # limitations under the License.
 
 from .debug_probe import DebugProbe
-from ..core.dap_interface import DAPInterface
 from ..core import exceptions
 from ..pyDAPAccess import DAPAccess
 from ..board.mbed_board import MbedBoard
 from ..board.board_ids import BOARD_ID_TO_INFO
 import six
 
-SWD_CAPABILITY_MASK = 1
-JTAG_CAPABILITY_MASK = 2
-
 ## @brief Wraps a pyDAPAccess link as a DebugProbe.
-class CMSISDAPProbe(DebugProbe, DAPInterface):
+class CMSISDAPProbe(DebugProbe):
+
+    # Masks for CMSIS-DAP capabilities.
+    SWD_CAPABILITY_MASK = 1
+    JTAG_CAPABILITY_MASK = 2
 
     # Map from DebugProbe protocol types to/from DAPAccess port types.
     PORT_MAP = {
@@ -36,6 +36,32 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
         DAPAccess.PORT.DEFAULT: DebugProbe.Protocol.DEFAULT,
         DAPAccess.PORT.SWD: DebugProbe.Protocol.SWD,
         DAPAccess.PORT.JTAG: DebugProbe.Protocol.JTAG,
+        }
+    
+    # APnDP constants.
+    DP = 0
+    AP = 1
+    
+    # Bitmasks for AP register address fields.
+    A32 = 0x0000000c
+    APBANKSEL = 0x000000f0
+    APSEL = 0xff000000
+    APSEL_APBANKSEL = APSEL | APBANKSEL
+    
+    # Address of DP's SELECT register.
+    DP_SELECT = 0x8
+    
+    # Map from AP/DP and 2-bit register address to the enums used by pyDAPAccess.
+    REG_ADDR_TO_ID_MAP = {
+        # APnDP A32
+        ( 0,    0x0 ) : DAPAccess.REG.DP_0x0,
+        ( 0,    0x4 ) : DAPAccess.REG.DP_0x4,
+        ( 0,    0x8 ) : DAPAccess.REG.DP_0x8,
+        ( 0,    0xC ) : DAPAccess.REG.DP_0xC,
+        ( 1,    0x0 ) : DAPAccess.REG.AP_0x0,
+        ( 1,    0x4 ) : DAPAccess.REG.AP_0x4,
+        ( 1,    0x8 ) : DAPAccess.REG.AP_0x8,
+        ( 1,    0xC ) : DAPAccess.REG.AP_0xC,
         }
     
     @classmethod
@@ -57,6 +83,7 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
         self._supported_protocols = None
         self._protocol = None
         self._is_open = False
+        self._dp_select = -1
         
     @property
     def description(self):
@@ -105,9 +132,9 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
             # Read CMSIS-DAP capabilities
             self._capabilities = self._link.identify(DAPAccess.ID.CAPABILITIES)
             self._supported_protocols = [DebugProbe.Protocol.DEFAULT]
-            if self._capabilities & SWD_CAPABILITY_MASK:
+            if self._capabilities & self.SWD_CAPABILITY_MASK:
                 self._supported_protocols.append(DebugProbe.Protocol.SWD)
-            if self._capabilities & JTAG_CAPABILITY_MASK:
+            if self._capabilities & self.JTAG_CAPABILITY_MASK:
                 self._supported_protocols.append(DebugProbe.Protocol.JTAG)
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
@@ -138,6 +165,8 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
         # Read the current mode and save it.
         actualMode = self._link.get_swj_mode()
         self._protocol = self.PORT_MAP[actualMode]
+        
+        self._invalidate_cached_registers()
 
     # TODO remove
     def swj_sequence(self):
@@ -152,6 +181,7 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
         try:
             self._link.disconnect()
             self._protocol = None
+            self._invalidate_cached_registers()
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
@@ -168,6 +198,7 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
     def reset(self):
         """Reset the target"""
         try:
+            self._invalidate_cached_registers()
             self._link.reset()
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
@@ -175,6 +206,7 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
     def assert_reset(self, asserted):
         """Assert or de-assert target reset line"""
         try:
+            self._invalidate_cached_registers()
             self._link.assert_reset(asserted)
         except DAPAccess.Error as exc:
             six.raise_from(self._convert_exception(exc), exc)
@@ -196,52 +228,128 @@ class CMSISDAPProbe(DebugProbe, DAPInterface):
     # ------------------------------------------- #
     #          DAP Access functions
     # ------------------------------------------- #
-    def write_reg(self, reg_id, value, dap_index=0):
-        """Write a single word to a DP or AP register"""
-        try:
-            return self._link.write_reg(reg_id, value, dap_index)
-        except DAPAccess.Error as exc:
-            six.raise_from(self._convert_exception(exc), exc)
 
-    def read_reg(self, reg_id, dap_index=0, now=True):
-        """Read a single word to a DP or AP register"""
+    ## @brief Read a DP register.
+    #
+    # @param self
+    # @param addr Integer register address being one of (0x0, 0x4, 0x8, 0xC).
+    # @param now
+    #
+    # @todo Handle auto DPBANKSEL.
+    def read_dp(self, addr, now=True):
+        reg_id = self.REG_ADDR_TO_ID_MAP[self.DP, addr]
+        
         try:
-            result = self._link.read_reg(reg_id, dap_index, now)
+            result = self._link.read_reg(reg_id, now=now)
+        except DAPAccess.Error as error:
+            self._invalidate_cached_registers()
+            six.raise_from(self._convert_exception(error), error)
+
+        # Read callback returned for async reads.
+        def read_dp_result_callback():
+            try:
+                return result()
+            except DAPAccess.Error as error:
+                self._invalidate_cached_registers()
+                six.raise_from(self._convert_exception(error), error)
+
+        return result if now else read_dp_result_callback
+
+    def write_dp(self, addr, data):
+        reg_id = self.REG_ADDR_TO_ID_MAP[self.DP, addr]
+        
+        # Skip writing DP SELECT register if its value is not changing.
+        if addr == self.DP_SELECT:
+            if data == self._dp_select:
+                return
+            self._dp_select = data
+
+        # Write the DP register.
+        try:
+            self._link.write_reg(reg_id, data)
+        except DAPAccess.Error as error:
+            self._invalidate_cached_registers()
+            six.raise_from(self._convert_exception(error), error)
+
+        return True
+
+    def read_ap(self, addr, now=True):
+        assert type(addr) in (six.integer_types)
+        ap_reg = self.REG_ADDR_TO_ID_MAP[self.AP, (addr & self.A32)]
+
+        try:
+            self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
+            result = self._link.read_reg(ap_reg, now=now)
+        except DAPAccess.Error as error:
+            self._invalidate_cached_registers()
+            six.raise_from(self._convert_exception(error), error)
+
+        # Read callback returned for async reads.
+        def read_ap_result_callback():
+            try:
+                return result()
+            except DAPAccess.Error as error:
+                self._invalidate_cached_registers()
+                six.raise_from(self._convert_exception(error), error)
+
+        return result if now else read_ap_result_callback
+
+    def write_ap(self, addr, data):
+        assert type(addr) in (six.integer_types)
+        ap_reg = self.REG_ADDR_TO_ID_MAP[self.AP, (addr & self.A32)]
+
+        # Select the AP and bank.
+        self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
+
+        # Perform the AP register write.
+        try:
+            self._link.write_reg(ap_reg, data)
+        except DAPAccess.Error as error:
+            self._invalidate_cached_registers()
+            six.raise_from(self._convert_exception(error), error)
+
+        return True
+
+    def read_ap_multiple(self, addr, count=1, now=True):
+        assert type(addr) in (six.integer_types)
+        ap_reg = self.REG_ADDR_TO_ID_MAP[self.AP, (addr & self.A32)]
+        
+        try:
+            # Select the AP and bank.
+            self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
             
-            # Need to wrap the deferred callback to convert exceptions.
-            def read_reg_cb():
-                try:
-                    return result()
-                except DAPAccess.Error as exc:
-                    six.raise_from(self._convert_exception(exc), exc)
+            result = self._link.reg_read_repeat(count, ap_reg, dap_index=0, now=now)
+        except DAPAccess.Error as exc:
+            self._invalidate_cached_registers()
+            six.raise_from(self._convert_exception(exc), exc)
+
+        # Need to wrap the deferred callback to convert exceptions.
+        def read_ap_repeat_callback():
+            try:
+                return result()
+            except DAPAccess.Error as exc:
+                self._invalidate_cached_registers()
+                six.raise_from(self._convert_exception(exc), exc)
+
+        return result if now else read_ap_repeat_callback
+
+    def write_ap_multiple(self, addr, values):
+        assert type(addr) in (six.integer_types)
+        ap_reg = self.REG_ADDR_TO_ID_MAP[self.AP, (addr & self.A32)]
+        
+        try:
+            # Select the AP and bank.
+            self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
             
-            return result if now else read_reg_cb
+            return self._link.reg_write_repeat(len(values), ap_reg, values, dap_index=0)
         except DAPAccess.Error as exc:
+            self._invalidate_cached_registers()
             six.raise_from(self._convert_exception(exc), exc)
 
-    def reg_write_repeat(self, num_repeats, reg_id, data_array, dap_index=0):
-        """Write one or more words to the same DP or AP register"""
-        try:
-            return self._link.reg_write_repeat(num_repeats, reg_id, data_array, dap_index)
-        except DAPAccess.Error as exc:
-            six.raise_from(self._convert_exception(exc), exc)
+    def _invalidate_cached_registers(self):
+        # Invalidate cached DP SELECT register.
+        self._dp_select = -1
 
-    def reg_read_repeat(self, num_repeats, reg_id, dap_index=0, now=True):
-        """Read one or more words from the same DP or AP register"""
-        try:
-            result = self._link.reg_read_repeat(num_repeats, reg_id, dap_index, now)
-
-            # Need to wrap the deferred callback to convert exceptions.
-            def read_reg_cb():
-                try:
-                    return result()
-                except DAPAccess.Error as exc:
-                    six.raise_from(self._convert_exception(exc), exc)
-
-            return result if now else read_reg_cb
-        except DAPAccess.Error as exc:
-            six.raise_from(self._convert_exception(exc), exc)
-  
     @staticmethod
     def _convert_exception(exc):
         if isinstance(exc, DAPAccess.TransferFaultError):

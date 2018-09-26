@@ -28,11 +28,13 @@ import os.path
 import six
 
 # DP register addresses.
-# !! These values are A[2:3] and not A[3:2]
-DP_IDCODE = DAPAccess.REG.DP_0x0
-DP_ABORT = DAPAccess.REG.DP_0x0
-DP_CTRL_STAT = DAPAccess.REG.DP_0x4
-DP_SELECT = DAPAccess.REG.DP_0x8
+DP_IDCODE = 0x0 # read-only
+DP_ABORT = 0x0 # write-only
+DP_CTRL_STAT = 0x4 # read-write
+DP_SELECT = 0x8 # write-only
+DP_RDBUFF = 0xC # read-only
+
+ABORT_STKERRCLR = 0x00000004
 
 # DP Control / Status Register bit definitions
 CTRLSTAT_STICKYORUN = 0x00000002
@@ -60,8 +62,6 @@ class DebugPort(object):
         self.target = target
         self.valid_aps = None
         self.aps = {}
-        self._csw = {}
-        self._dp_select = -1
         self._access_number = 0
         if LOG_DAP:
             self._setup_logging()
@@ -116,9 +116,6 @@ class DebugPort(object):
         except exceptions.ProbeError as error:
             self._handle_error(error, self.next_access_number)
             raise
-        finally:
-            self._csw = {}
-            self._dp_select = -1
 
     def read_reg(self, addr, now=True):
         return self.readDP(addr, now)
@@ -145,16 +142,15 @@ class DebugPort(object):
         self.write_reg(DP_CTRL_STAT, 0)
 
     def reset(self):
-        try:
-            self.link.reset()
-        finally:
-            self._csw = {}
-            self._dp_select = -1
+        for ap in self.aps.values():
+            ap.reset_did_occur()
+        self.link.reset()
 
     def assert_reset(self, asserted):
+        if asserted:
+            for ap in self.aps.values():
+                ap.reset_did_occur()
         self.link.assert_reset(asserted)
-        self._csw = {}
-        self._dp_select = -1
 
     def is_reset_asserted(self):
         return self.link.is_reset_asserted()
@@ -217,11 +213,10 @@ class DebugPort(object):
         return seq
 
     def readDP(self, addr, now=True):
-        assert addr in DAPAccess.REG
         num = self.next_access_number
 
         try:
-            result_cb = self.link.read_reg(addr, now=False)
+            result_cb = self.link.read_dp(addr, now=False)
         except exceptions.ProbeError as error:
             self._handle_error(error, num)
             raise
@@ -245,22 +240,13 @@ class DebugPort(object):
             return readDPCb
 
     def writeDP(self, addr, data):
-        assert addr in DAPAccess.REG
         num = self.next_access_number
-
-        # Skip writing DP SELECT register if its value is not changing.
-        if addr == DP_SELECT:
-            if data == self._dp_select:
-                if LOG_DAP:
-                    self.logger.info("writeDP:%06d cached (addr=0x%08x) = 0x%08x", num, addr.value, data)
-                return
-            self._dp_select = data
 
         # Write the DP register.
         try:
             if LOG_DAP:
                 self.logger.info("writeDP:%06d (addr=0x%08x) = 0x%08x", num, addr.value, data)
-            self.link.write_reg(addr, data)
+            self.link.write_dp(addr, data)
         except exceptions.ProbeError as error:
             self._handle_error(error, num)
             raise
@@ -270,27 +256,11 @@ class DebugPort(object):
     def writeAP(self, addr, data):
         assert type(addr) in (six.integer_types)
         num = self.next_access_number
-        ap_sel = addr & APSEL
-        bank_sel = addr & APBANKSEL
-        ap_regaddr = addr & APREG_MASK
 
-        # Don't need to write CSW if it's not changing value.
-        if ap_regaddr == MEM_AP_CSW:
-            if ap_sel in self._csw and data == self._csw[ap_sel]:
-                if LOG_DAP:
-                    self.logger.info("writeAP:%06d cached (addr=0x%08x) = 0x%08x", num, addr, data)
-                return
-            self._csw[ap_sel] = data
-
-        # Select the AP and bank.
-        self.writeDP(DP_SELECT, ap_sel | bank_sel)
-
-        # Perform the AP register write.
-        ap_reg = _ap_addr_to_reg(addr)
         try:
             if LOG_DAP:
                 self.logger.info("writeAP:%06d (addr=0x%08x) = 0x%08x", num, addr, data)
-            self.link.write_reg(ap_reg, data)
+            self.link.write_ap(addr, data)
         except exceptions.ProbeError as error:
             self._handle_error(error, num)
             raise
@@ -300,14 +270,9 @@ class DebugPort(object):
     def readAP(self, addr, now=True):
         assert type(addr) in (six.integer_types)
         num = self.next_access_number
-        res = None
-        ap_reg = _ap_addr_to_reg(addr)
 
         try:
-            ap_sel = addr & APSEL
-            bank_sel = addr & APBANKSEL
-            self.writeDP(DP_SELECT, ap_sel | bank_sel)
-            result_cb = self.link.read_reg(ap_reg, now=False)
+            result_cb = self.link.read_ap(addr, now=False)
         except exceptions.ProbeError as error:
             self._handle_error(error, num)
             raise
@@ -333,9 +298,6 @@ class DebugPort(object):
     def _handle_error(self, error, num):
         if LOG_DAP:
             self.logger.info("error:%06d %s", num, error)
-        # Invalidate cached registers
-        self._csw = {}
-        self._dp_select = -1
         # Clear sticky error for Fault errors only
         if isinstance(error, exceptions.TransferFaultError):
             self.clear_sticky_err()
@@ -343,9 +305,9 @@ class DebugPort(object):
     def clear_sticky_err(self):
         mode = self.link.wire_protocol
         if mode == DebugProbe.Protocol.SWD:
-            self.link.write_reg(DAPAccess.REG.DP_0x0, (1 << 2))
+            self.write_reg(DP_ABORT, ABORT_STKERRCLR)
         elif mode == DebugProbe.Protocol.JTAG:
-            self.link.write_reg(DP_CTRL_STAT, CTRLSTAT_STICKYERR)
+            self.write_reg(DP_CTRL_STAT, CTRLSTAT_STICKYERR)
         else:
             assert False
 

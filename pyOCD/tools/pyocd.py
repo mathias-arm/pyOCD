@@ -76,13 +76,6 @@ VC_NAMES_MAP = {
         Target.CATCH_CORE_RESET : "core reset",
         }
 
-DP_REGS_MAP = {
-        0x0 : DAPAccess.REG.DP_0x0,
-        0x4 : DAPAccess.REG.DP_0x4,
-        0x8 : DAPAccess.REG.DP_0x8,
-        0xc : DAPAccess.REG.DP_0xC
-        }
-
 ## Default SWD clock in kHz.
 DEFAULT_CLOCK_FREQ_KHZ = 1000
 
@@ -633,7 +626,7 @@ class PyOCDTool(object):
                 return self.exitCode
 
             self.target = self.board.target
-            self.link = self.session.probe
+            self.probe = self.session.probe
             self.flash = self.board.flash
 
             # Set elf file if provided.
@@ -819,7 +812,7 @@ class PyOCDTool(object):
             return
         state = int(args[0], base=0)
         print("nRESET = %d" % (state))
-        self.target.dp.assert_reset((state == 0))
+        self.probe.assert_reset((state == 0))
 
     @cmdoptions([make_option('-c', "--center", action="store_true")])
     def handle_disasm(self, args, other):
@@ -1033,10 +1026,10 @@ class PyOCDTool(object):
         except:
             print("Error: invalid frequency")
             return 1
-        self.link.set_clock(freq_Hz)
-        if self.link.wire_protocol == DebugProbe.Protocol.SWD:
+        self.probe.set_clock(freq_Hz)
+        if self.probe.wire_protocol == DebugProbe.Protocol.SWD:
             swd_jtag = 'SWD'
-        elif self.link.wire_protocol == DebugProbe.Protocol.JTAG:
+        elif self.probe.wire_protocol == DebugProbe.Protocol.JTAG:
             swd_jtag = 'JTAG'
         else:
             swd_jtag = '??'
@@ -1059,8 +1052,8 @@ class PyOCDTool(object):
                     'session' : self.session,
                     'board' : self.board,
                     'target' : self.target,
-                    'probe' : self.link,
-                    'link' : self.link, # Old name
+                    'probe' : self.probe,
+                    'link' : self.probe, # Old name
                     'flash' : self.flash,
                     'dp' : self.target.dp,
                     'aps' : self.target.dp.aps,
@@ -1088,10 +1081,9 @@ class PyOCDTool(object):
         if len(args) < 1:
             print("Missing DP address")
             return
-        addr_int = self.convert_value(args[0])
-        addr = DP_REGS_MAP[addr_int]
+        addr = self.convert_value(args[0])
         result = self.target.dp.read_reg(addr)
-        print("DP register 0x%x = 0x%08x" % (addr_int, result))
+        print("DP register 0x%x = 0x%08x" % (addr, result))
 
     def handle_writedp(self, args):
         if len(args) < 1:
@@ -1100,8 +1092,7 @@ class PyOCDTool(object):
         if len(args) < 2:
             print("Missing value")
             return
-        addr_int = self.convert_value(args[0])
-        addr = DP_REGS_MAP[addr_int]
+        addr = self.convert_value(args[0])
         data = self.convert_value(args[1])
         self.target.dp.write_reg(addr, data)
 
@@ -1210,7 +1201,7 @@ class PyOCDTool(object):
 
     def handle_show_target(self, args):
         print("Target:       %s" % self.target.part_number)
-        print("DAP IDCODE:   0x%08x" % self.target.readIDCode())
+        print("DAP IDCODE:   0x%08x" % self.target.dp.dpidr)
 
     def handle_show_cores(self, args):
         if self.target.isLocked():
@@ -1307,7 +1298,7 @@ class PyOCDTool(object):
         print_fields('DFSR', dfsr, DFSR_fields, showAll)
 
     def handle_show_nreset(self, args):
-        rst = int(not self.link.is_reset_asserted())
+        rst = int(not self.probe.is_reset_asserted())
         print("nRESET = {}".format(rst))
 
     def handle_set(self, args):

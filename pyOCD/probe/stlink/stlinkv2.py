@@ -190,6 +190,9 @@ class Stlink(object):
     
     MIN_JTAG_VERSION = 24
     
+    # Port number to use to indicate DP registers.
+    DP_PORT = 0xffff
+
     def __init__(self, device):
         self._device = device
         self._hw_version = 0
@@ -405,8 +408,9 @@ class Stlink(object):
         self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_8BIT, self._device.max_packet_size)
     
     def read_dap_register(self, port, addr):
-        assert ((addr & 0xf0) == 0) or (port != 0xffff), "banks are not allowed for DP registers"
+        assert ((addr & 0xf0) == 0) or (port != self.DP_PORT), "banks are not allowed for DP registers"
         assert (addr >> 16) == 0, "register address must be 16-bit"
+        
         cmd = [Stlink.JTAG_COMMAND, Stlink.JTAG_READ_DAP_REG]
         cmd.extend(six.iterbytes(struct.pack('<HH', port, addr)))
         response = self._device.xfer(cmd, readSize=8)
@@ -415,7 +419,7 @@ class Stlink(object):
         return value
     
     def write_dap_register(self, port, addr, value):
-        assert ((addr & 0xf0) == 0) or (port != 0xffff), "banks are not allowed for DP registers"
+        assert ((addr & 0xf0) == 0) or (port != self.DP_PORT), "banks are not allowed for DP registers"
         assert (addr >> 16) == 0, "register address must be 16-bit"
         cmd = [Stlink.JTAG_COMMAND, Stlink.JTAG_WRITE_DAP_REG]
         cmd.extend(six.iterbytes(struct.pack('<HHI', port, addr, value)))

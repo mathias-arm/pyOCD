@@ -23,6 +23,9 @@ import six
 
 ## @brief Wraps an StLink as a DebugProbe.
 class StlinkProbe(DebugProbe, MemoryInterface):
+        
+    APSEL = 0xff000000
+    APSEL_SHIFT = 24
     
     @classmethod
     def get_all_connected_probes(cls):
@@ -152,14 +155,9 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     #          DAP Access functions
     # ------------------------------------------- #
     
-    DP_PORT = 0xffff
-    
-    APSEL = 0xff000000
-    APSEL_SHIFT = 24
-    
     def read_dp(self, addr, now=True):
         try:
-            result = self._link.read_dap_register(self.DP_PORT, addr)
+            result = self._link.read_dap_register(stlinkv2.Stlink.DP_PORT, addr)
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
         
@@ -170,7 +168,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
 
     def write_dp(self, addr, data):
         try:
-            result = self._link.write_dap_register(self.DP_PORT, addr, data)
+            result = self._link.write_dap_register(stlinkv2.Stlink.DP_PORT, addr, data)
         except StlinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 

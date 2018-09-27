@@ -78,7 +78,7 @@ class StlinkUsbInterface(object):
             return (dev.idVendor == cls.USB_VID) and (dev.idProduct in cls.USB_PID_EP_MAP)
         except ValueError as error:
             # Permission denied error gets reported as ValueError (langid)
-            log.debug(("ValueError \"{}\" while trying to access dev.product "
+            log.debug(("ValueError \"{}\" while trying to access USB device fields "
                            "for idVendor=0x{:04x} idProduct=0x{:04x}. "
                            "This is probably a permission issue.").format(error, dev.idVendor, dev.idProduct))
             return False
@@ -205,9 +205,11 @@ class StlinkUsbInterface(object):
         if count != len(data):
             raise StlinkException("Error, only %d Bytes was transmitted to ST-Link instead of expected %d" % (count, len(data)))
 
-    def _read(self, size, timeout=1000):
+    def _prime_read(self, size):
         for _ in range((size + self._max_packet_size + 1) // self._max_packet_size):
             self._read_sem.release()
+    
+    def _read(self, size, timeout=1000):
         data = bytearray()
         while len(data) < size:
             while len(self._receive_data) == 0:
@@ -233,17 +235,24 @@ class StlinkUsbInterface(object):
             try:
                 if len(cmd) > self.CMD_SIZE:
                     raise StlinkException("command is too large (%d bytes, max %d bytes)" % (len(cmd), self.CMD_SIZE))
+
+                # Prime the data in phase so it happens immediately when the device readies the data.
+                if readSize is not None:
+                    self._prime_read(readSize)
+
                 # Command phase. Pad command to required 16 bytes.
                 paddedCmd = bytearray(self.CMD_SIZE)
                 paddedCmd[0:len(cmd)] = cmd
                 if LOG_USB_DATA:
                     log.debug("  USB CMD> %s" % ' '.join(['%02x' % i for i in paddedCmd]))
                 self._write(paddedCmd, timeout)
+                
                 # Optional data out phase.
                 if writeData is not None:
                     if LOG_USB_DATA:
                         log.debug("  USB OUT> %s" % ' '.join(['%02x' % i for i in writeData]))
                     self._write(writeData, timeout)
+                
                 # Optional data in phase.
                 if readSize is not None:
                     data = self._read(readSize)

@@ -31,39 +31,41 @@ class MemoryInterface(object):
     def read_memory(self, addr, transfer_size=32, now=True):
         raise NotImplementedError()
 
-    def write_block_memory_aligned32(self, addr, data):
+    ## @brief Write an aligned block of 32-bit words.
+    def write_memory_block32(self, addr, data):
         raise NotImplementedError()
 
-    def read_block_memory_aligned32(self, addr, size):
+    ## @brief Read an aligned block of 32-bit words.
+    def read_memory_block32(self, addr, size):
         raise NotImplementedError()
   
     # @brief Shorthand to write a 32-bit word.
     def write32(self, addr, value):
-        self.writeMemory(addr, value, 32)
+        self.write_memory(addr, value, 32)
 
     # @brief Shorthand to write a 16-bit halfword.
     def write16(self, addr, value):
-        self.writeMemory(addr, value, 16)
+        self.write_memory(addr, value, 16)
 
     # @brief Shorthand to write a byte.
     def write8(self, addr, value):
-        self.writeMemory(addr, value, 8)
+        self.write_memory(addr, value, 8)
 
     # @brief Shorthand to read a 32-bit word.
     def read32(self, addr, now=True):
-        return self.readMemory(addr, 32, now)
+        return self.read_memory(addr, 32, now)
 
     # @brief Shorthand to read a 16-bit halfword.
     def read16(self, addr, now=True):
-        return self.readMemory(addr, 16, now)
+        return self.read_memory(addr, 16, now)
 
     # @brief Shorthand to read a byte.
     def read8(self, addr, now=True):
-        return self.readMemory(addr, 8, now)
+        return self.read_memory(addr, 8, now)
 
     ## @brief Read a block of unaligned bytes in memory.
     # @return an array of byte values
-    def read_block_memory_unaligned8(self, addr, size):
+    def read_memory_block8(self, addr, size):
         res = []
 
         # try to read 8bits data
@@ -83,7 +85,7 @@ class MemoryInterface(object):
 
         # try to read aligned block of 32bits
         if (size >= 4):
-            mem = self.read_block_memory_aligned32(addr, size // 4)
+            mem = self.read_memory_block32(addr, size // 4)
             res += conversion.u32leListToByteList(mem)
             size -= 4*len(mem)
             addr += 4*len(mem)
@@ -102,7 +104,7 @@ class MemoryInterface(object):
         return res
 
     ## @brief Write a block of unaligned bytes in memory.
-    def write_block_memory_unaligned8(self, addr, data):
+    def write_memory_block8(self, addr, data):
         size = len(data)
         idx = 0
 
@@ -123,7 +125,7 @@ class MemoryInterface(object):
         # write aligned block of 32 bits
         if (size >= 4):
             data32 = conversion.byteListToU32leList(data[idx:idx + (size & ~0x03)])
-            self.write_block_memory_aligned32(addr, data32)
+            self.write_memory_block32(addr, data32)
             addr += size & ~0x03
             idx += size & ~0x03
             size -= size & ~0x03
@@ -148,14 +150,14 @@ class MemoryInterface(object):
         return self.read_memory(addr, transfer_size, now)
     
     def writeBlockMemoryAligned32(self, addr, data):
-        self.write_block_memory_aligned32(addr, data)
+        self.write_memory_block32(addr, data)
 
     def readBlockMemoryAligned32(self, addr, size):
-        return self.read_block_memory_aligned32(addr, size)
-
-    def readBlockMemoryUnaligned8(self, addr, size):
-        return self.read_block_memory_unaligned8(addr, size)
+        return self.read_memory_block32(addr, size)
         
     def writeBlockMemoryUnaligned8(self, addr, data):
-        self.write_block_memory_unaligned8(addr, data)
+        self.write_memory_block8(addr, data)
+
+    def readBlockMemoryUnaligned8(self, addr, size):
+        return self.read_memory_block8(addr, size)
 

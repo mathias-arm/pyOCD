@@ -236,10 +236,10 @@ class StlinkProbe(DebugProbe, MemoryInterface):
             return result
         return result if now else read_callback
 
-    def write_block_memory_aligned32(self, addr, data):
+    def write_memory_block32(self, addr, data):
         self._link.write_mem32(addr, conversion.u32leListToByteList(data))
 
-    def read_block_memory_aligned32(self, addr, size):
+    def read_memory_block32(self, addr, size):
         return conversion.byteListToU32leList(self._link.read_mem32(addr, size * 4))
   
     @staticmethod

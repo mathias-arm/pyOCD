@@ -329,15 +329,15 @@ class Stlink(object):
     def _check_status(self, response):
         status, = struct.unpack('<H', response)
         if status != Stlink.JTAG_OK:
-            raise StlinkException("STLink error: " + STATUS_MESSAGES.get(status, "Unknown error"))
+            raise StlinkException("STLink error: " + Stlink.STATUS_MESSAGES.get(status, "Unknown error"))
 
-    def _read_mem(self, addr, size, memcmd, max):
+    def _read_mem(self, addr, size, memcmd, max, apsel):
         result = []
         while size:
             thisTransferSize = min(size, max)
             
             cmd = [Stlink.JTAG_COMMAND, memcmd]
-            cmd.extend(six.iterbytes(struct.pack('<IH', addr, thisTransferSize)))
+            cmd.extend(six.iterbytes(struct.pack('<IHB', addr, thisTransferSize, apsel)))
             result += self._device.xfer(cmd, readSize=thisTransferSize)
             
             addr += thisTransferSize
@@ -353,13 +353,13 @@ class Stlink(object):
                 raise exc
         return result
 
-    def _write_mem(self, addr, data, memcmd, max):
+    def _write_mem(self, addr, data, memcmd, max, apsel):
         while len(data):
             thisTransferSize = min(len(data), max)
             thisTransferData = data[:thisTransferSize]
             
             cmd = [Stlink.JTAG_COMMAND, memcmd]
-            cmd.extend(six.iterbytes(struct.pack('<IH', addr, thisTransferSize)))
+            cmd.extend(six.iterbytes(struct.pack('<IHB', addr, thisTransferSize, apsel)))
             self._device.xfer(cmd, writeData=thisTransferData)
             
             addr += thisTransferSize
@@ -374,38 +374,38 @@ class Stlink(object):
                 exc.fault_length = thisTransferSize - (faultAddr - addr)
                 raise exc
 
-    def read_mem32(self, addr, size):
+    def read_mem32(self, addr, size, apsel):
         assert (addr & 0x3) == 0 and (size & 0x3) == 0, "address and size must be word aligned"
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE)
+        return self._read_mem(addr, size, Stlink.JTAG_READMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
 
-    def write_mem32(self, addr, data):
+    def write_mem32(self, addr, data, apsel):
         assert (addr & 0x3) == 0 and (len(data) & 3) == 0, "address and size must be word aligned"
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE)
+        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
 
-    def read_mem16(self, addr, size):
+    def read_mem16(self, addr, size, apsel):
         assert (addr & 0x1) == 0 and (size & 0x1) == 0, "address and size must be half-word aligned"
 
         if self._jtag_version < 26:
             # 16-bit r/w is only available from J26, so revert to 8-bit accesses.
-            return self.read_mem8(addr, size)
+            return self.read_mem8(addr, size, apsel)
         
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE)
+        return self._read_mem(addr, size, Stlink.JTAG_READMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
 
-    def write_mem16(self, addr, data):
+    def write_mem16(self, addr, data, apsel):
         assert (addr & 0x1) == 0 and (len(data) & 1) == 0, "address and size must be half-word aligned"
 
         if self._jtag_version < 26:
             # 16-bit r/w is only available from J26, so revert to 8-bit accesses.
-            self.write_mem8(addr, data)
+            self.write_mem8(addr, data, apsel)
             return
         
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE)
+        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
 
-    def read_mem8(self, addr, size):
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_8BIT, self._device.max_packet_size)
+    def read_mem8(self, addr, size, apsel):
+        return self._read_mem(addr, size, Stlink.JTAG_READMEM_8BIT, self._device.max_packet_size, apsel)
 
-    def write_mem8(self, addr, data):
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_8BIT, self._device.max_packet_size)
+    def write_mem8(self, addr, data, apsel):
+        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_8BIT, self._device.max_packet_size, apsel)
     
     def read_dap_register(self, port, addr):
         assert ((addr & 0xf0) == 0) or (port != self.DP_PORT), "banks are not allowed for DP registers"

@@ -209,26 +209,26 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     ## @brief Write a single memory location.
     #
     # By default the transfer size is a word.
-    def write_memory(self, addr, data, transfer_size=32):
+    def write_memory(self, addr, data, transfer_size=32, apsel=0):
         if transfer_size == 32:
-            self._link.write_mem32(addr, conversion.u32leListToByteList([data]))
+            self._link.write_mem32(addr, conversion.u32leListToByteList([data]), apsel)
         elif transfer_size == 16:
-            self._link.write_mem16(addr, conversion.u16leListToByteList([data]))
+            self._link.write_mem16(addr, conversion.u16leListToByteList([data]), apsel)
         elif transfer_size == 8:
-            self._link.write_mem8(addr, [data])
+            self._link.write_mem8(addr, [data], apsel)
         else:
             raise ValueError("transfer size is not 32, 16, or 8")
         
     ## @brief Read a memory location.
     #
     # By default, a word will be read.
-    def read_memory(self, addr, transfer_size=32, now=True):
+    def read_memory(self, addr, transfer_size=32, now=True, apsel=0):
         if transfer_size == 32:
-            result = conversion.byteListToU32leList(self._link.read_mem32(addr, 4))[0]
+            result = conversion.byteListToU32leList(self._link.read_mem32(addr, 4, apsel))[0]
         elif transfer_size == 16:
-            result = conversion.byteListToU16leList(self._link.read_mem16(addr, 2))[0]
+            result = conversion.byteListToU16leList(self._link.read_mem16(addr, 2, apsel))[0]
         elif transfer_size == 8:
-            result = self._link.read_mem8(addr, 1)[0]
+            result = self._link.read_mem8(addr, 1, apsel)[0]
         else:
             raise ValueError("transfer size is not 32, 16, or 8")
         
@@ -236,11 +236,11 @@ class StlinkProbe(DebugProbe, MemoryInterface):
             return result
         return result if now else read_callback
 
-    def write_memory_block32(self, addr, data):
-        self._link.write_mem32(addr, conversion.u32leListToByteList(data))
+    def write_memory_block32(self, addr, data, apsel=0):
+        self._link.write_mem32(addr, conversion.u32leListToByteList(data), apsel)
 
-    def read_memory_block32(self, addr, size):
-        return conversion.byteListToU32leList(self._link.read_mem32(addr, size * 4))
+    def read_memory_block32(self, addr, size, apsel=0):
+        return conversion.byteListToU32leList(self._link.read_mem32(addr, size * 4, apsel))
   
     @staticmethod
     def _convert_exception(exc):

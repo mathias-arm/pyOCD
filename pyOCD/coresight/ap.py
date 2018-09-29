@@ -196,19 +196,19 @@ class MEM_AP(AccessPort, memory_interface.MemoryInterface):
         
         self.probe = dp.link
         
-        # Connect appropriate memory interface implementations methods depending on whether
+        # Connect appropriate memory interface implementation methods depending on whether
         # the probe supports accelerated memory access commands.
         if isinstance(self.probe, memory_interface.MemoryInterface):
-            logging.info("Using accelerated memory access interface")
-            setattr(self, 'write_memory', self._write_memory_via_probe)
-            setattr(self, 'read_memory', self._read_memory_via_probe)
-            setattr(self, 'write_memory_block32', self._write_memory_block32_via_probe)
-            setattr(self, 'read_memory_block32', self._read_memory_block32_via_probe)
+            logging.debug("Using accelerated memory access interface")
+            self.write_memory = self._write_memory_via_probe
+            self.read_memory = self._read_memory_via_probe
+            self.write_memory_block32 = self._write_memory_block32_via_probe
+            self.read_memory_block32 = self._read_memory_block32_via_probe
         else:
-            setattr(self, 'write_memory', self._write_memory)
-            setattr(self, 'read_memory', self._read_memory)
-            setattr(self, 'write_memory_block32', self._write_memory_block32)
-            setattr(self, 'read_memory_block32', self._read_memory_block32)
+            self.write_memory = self._write_memory
+            self.read_memory = self._read_memory
+            self.write_memory_block32 = self._write_memory_block32
+            self.read_memory_block32 = self._read_memory_block32
 
     def read_reg(self, addr, now=True):
         ap_regaddr = addr & APREG_MASK
@@ -241,16 +241,16 @@ class MEM_AP(AccessPort, memory_interface.MemoryInterface):
         self._csw = -1
 
     def _write_memory_via_probe(self, addr, data, transfer_size=32):
-        self.probe.write_memory(addr, data, transfer_size)
+        self.probe.write_memory(addr, data, transfer_size, apsel=self.ap_num)
 
     def _read_memory_via_probe(self, addr, transfer_size=32, now=True):
-        return self.probe.read_memory(addr, transfer_size, now)
+        return self.probe.read_memory(addr, transfer_size, now, apsel=self.ap_num)
 
     def _write_memory_block32_via_probe(self, addr, data):
-        self.probe.write_memory_block32(addr, data)
+        self.probe.write_memory_block32(addr, data, apsel=self.ap_num)
 
     def _read_memory_block32_via_probe(self, addr, size):
-        return self.probe.read_memory_block32(addr, size)
+        return self.probe.read_memory_block32(addr, size, apsel=self.ap_num)
 
     ## @brief Write a single memory location.
     #

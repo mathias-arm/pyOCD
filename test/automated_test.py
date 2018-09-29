@@ -275,8 +275,8 @@ def main():
     board_id_list = sorted(b.unique_id for b in board_list)
     
     # Filter boards.
-    if args.boards:
-        board_id_list = [b for b in board_id_list if any(c for c in args.boards if c in b)]
+    if args.board:
+        board_id_list = [b for b in board_id_list if any(c for c in args.board if c.lower() in b.lower())]
 
     # If only 1 job was requested, don't bother spawning processes.
     start = time()

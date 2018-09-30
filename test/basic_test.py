@@ -38,7 +38,7 @@ def run_basic_test(board_id):
     return basic_test(board_id, None)
 
 def basic_test(board_id, file):
-    with ConnectHelper.session_with_chosen_probe(unique_id=board_id) as session:
+    with ConnectHelper.session_with_chosen_probe(unique_id=board_id, board_config_file='test_boards.json') as session:
         board = session.board
         addr = 0
         size = 0

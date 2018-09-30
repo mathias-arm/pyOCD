@@ -42,7 +42,6 @@ class MbedBoard(Board):
         except KeyError:
             self._name = "Unknown Board"
             self.native_target = None
-            self._test_binary = None
 
         # Unless overridden use the native target
         if target is None:
@@ -53,13 +52,6 @@ class MbedBoard(Board):
             target = "cortex_m"
 
         super(MbedBoard, self).__init__(session, target)
-
-    @property
-    def test_binary(self):
-        """
-        Return name of test binary file
-        """
-        return self._test_binary
 
     @property
     def name(self):

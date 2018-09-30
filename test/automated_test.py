@@ -161,7 +161,7 @@ def print_board_header(outputFile, board, n, includeDividers=True, includeLeadin
 def test_board(board_id, n, loglevel, logToConsole, commonLogFile):
     probe = DebugProbeAggregator.get_probe_with_id(board_id)
     assert probe is not None
-    session = Session(probe)
+    session = Session(probe, board_config_file='test_boards.json')
     board = session.board
 
     originalStdout = sys.stdout

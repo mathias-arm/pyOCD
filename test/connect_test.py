@@ -81,7 +81,7 @@ def connect_test(board):
     result = ConnectTestResult()
 
     # Install binary.
-    live_session = ConnectHelper.session_with_chosen_probe(board_id=board_id, frequency=1000000)
+    live_session = ConnectHelper.session_with_chosen_probe(board_id=board_id, frequency=1000000, board_config_file='test_boards.json')
     live_board = live_session.board
     memory_map = board.target.getMemoryMap()
     rom_region = memory_map.getBootMemory()
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=level)
-    session = ConnectHelper.get_sessions_for_all_connected_probes()[0]
+    session = ConnectHelper.get_sessions_for_all_connected_probes(board_config_file='test_boards.json')[0]
     test = ConnectTest()
     result = [test.run(session.board)]
     test.print_perf_info(result)

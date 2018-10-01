@@ -73,8 +73,16 @@ class Flash_stm32l475xx(Flash):
 
 class STM32L475xx(CoreSightTarget):
         
-    def init(self):
-        super(STM32L475xx, self).init()
+    def create_init_sequence(self):
+        seq = super(STM32L475xx, self).create_init_sequence()
+
+        seq.insert_after('create_cores',
+            ('setup_dbgmcu', self.setup_dbgmcu)
+            )
+
+        return seq
+
+    def setup_dbgmcu(self):
         self.write32(DBGMCU.CR, DBGMCU.CR_VALUE)
         self.write32(DBGMCU.APB1FZR1, DBGMCU.APB1FZR1_VALUE)
         self.write32(DBGMCU.APB1FZR2, DBGMCU.APB1FZR2_VALUE)

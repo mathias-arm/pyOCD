@@ -39,8 +39,10 @@ class Board(object):
         for uid, settings in boardConfig.items():
             if uid.lower() in self.unique_id.lower():
                 log.info("Using board config settings for board %s: %s" % (session.probe.unique_id, settings))
-                self._target_type = settings['target_type']
-                self._test_binary = settings['test_binary']
+                if 'target_type' in settings:
+                    self._target_type = settings['target_type']
+                if 'test_binary' in settings:
+                    self._test_binary = settings['test_binary']
 
         # Create Target and Flash instances.
         try:

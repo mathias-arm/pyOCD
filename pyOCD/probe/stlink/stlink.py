@@ -14,38 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The MIT License (MIT)
-# 
-# Copyright (c) 2015 Pavel Revak <pavel.revak@gmail.com>
-# 
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-# 
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-from . import StlinkException
+from . import STLinkException
 from ...core import exceptions
 import logging
 import struct
 import six
 from enum import Enum
 
-log = logging.getLogger('stlink.stlinkv2')
+log = logging.getLogger('self.stlinkv2')
 
-class Stlink(object):
+class STLink(object):
     class Protocol(Enum):
         SWD = 1
         JTAG = 2
@@ -161,29 +139,29 @@ class Stlink(object):
     }
 
     SWD_FREQ_MAP = {
-        4600000:    0,
-        1800000:    1, # Default
-        1200000:    2,
-        950000:     3,
-        650000:     5,
-        480000:     7,
-        400000:     9,
-        360000:     10,
-        240000:     15,
-        150000:     25,
-        125000:     31,
-        100000:     40,
+        4600000 :   0,
+        1800000 :   1, # Default
+        1200000 :   2,
+        950000 :    3,
+        650000 :    5,
+        480000 :    7,
+        400000 :    9,
+        360000 :    10,
+        240000 :    15,
+        150000 :    25,
+        125000 :    31,
+        100000 :    40,
     }
     
     JTAG_FREQ_MAP = {
-        18000000:   2,
-        9000000:    4,
-        4500000:    8,
-        2250000:    16,
-        1120000:    32, # Default
-        560000:     64,
-        280000:     128,
-        140000:     256,
+        18000000 :  2,
+        9000000 :   4,
+        4500000 :   8,
+        2250000 :   16,
+        1120000 :   32, # Default
+        560000 :    64,
+        280000 :    128,
+        140000 :    256,
     }
 
     MAXIMUM_TRANSFER_SIZE = 1024
@@ -207,20 +185,9 @@ class Stlink(object):
 
     def close(self):
         self.enter_idle()
-        
-        # WORKAROUND for OS/X 10.11+
-        # ... read from ST-Link, must be performed even times
-        # call this function after last send command
-#         if self._device.xfer_counter & 1:
-#             self._device.xfer([Stlink.STLINK_GET_CURRENT_MODE], readSize=2)
-        
         self._device.close()
 
     def get_version(self):
-        # WORKAROUND for OS/X 10.11+
-        # ... retry XFER if first is timeout.
-        # only during this command it is necessary
-        #
         # GET_VERSION response structure:
         #   Byte 0-1:
         #     [15:12] Major/HW version
@@ -228,8 +195,8 @@ class Stlink(object):
         #     [5:0]   SWIM or MSC version
         #   Byte 2-3: ST_VID
         #   Byte 4-5: STLINK_PID
-        rx = self._device.xfer([Stlink.GET_VERSION], readSize=6)#, retries=2)
-        ver, = struct.unpack('>H', rx[:2])
+        response = self._device.transfer([self.GET_VERSION], readSize=6)
+        ver, = struct.unpack('>H', response[:2])
         dev_ver = self._device.version_name
         # TODO create version bitfield constants
         self._hw_version = (ver >> 12) & 0xf
@@ -247,21 +214,25 @@ class Stlink(object):
             #   5-7: reserved
             #   8-9: ST_VID
             #   10-11: STLINK_PID
-            rx = self._device.xfer([Stlink.GET_VERSION_EXT], readSize=12)
-            hw_vers, _, self._jtag_version = struct.unpack('<5B', rx[0:3])
+            response = self._device.transfer([self.GET_VERSION_EXT], readSize=12)
+            hw_vers, _, self._jtag_version = struct.unpack('<5B', response[0:3])
 
         # Check versions.
         if self._jtag_version == 0:
-            raise StlinkException("%s firmware does not support JTAG/SWD. Please update"
+            raise STLinkException("%s firmware does not support JTAG/SWD. Please update"
                 "to a firmware version that supports JTAG/SWD" % (self._version_str))
         if self._jtag_version < self.MIN_JTAG_VERSION:
-            raise StlinkException("STLink %s is using an unsupported, older firmware version. "
+            raise STLinkException("STLink %s is using an unsupported, older firmware version. "
                 "Please update to the latest STLink firmware. Current version is %s, must be at least version v2J%d.)" 
                 % (self.serial_number, self._version_str, self.MIN_JTAG_VERSION))
 
     @property
+    def vendor_name(self):
+        return self._device.vendor_name
+
+    @property
     def product_name(self):
-        return "STLink" + self._device.version_name
+        return self._device.product_name + self._device.version_name
 
     @property
     def serial_number(self):
@@ -284,73 +255,75 @@ class Stlink(object):
         return self._target_voltage
 
     def get_target_voltage(self):
-        rx = self._device.xfer([Stlink.GET_TARGET_VOLTAGE], readSize=8)
-        a0, a1 = struct.unpack('<II', rx[:8])
+        response = self._device.transfer([self.GET_TARGET_VOLTAGE], readSize=8)
+        a0, a1 = struct.unpack('<II', response[:8])
         self._target_voltage = 2 * a1 * 1.2 / a0 if a0 != 0 else None
 
     def enter_idle(self):
-        rx = self._device.xfer([Stlink.GET_CURRENT_MODE], readSize=2)
-        if rx[0] == Stlink.DEV_DFU_MODE:
-            self._device.xfer([Stlink.DFU_COMMAND, Stlink.DFU_EXIT])
-        elif rx[0] == Stlink.DEV_JTAG_MODE:
-            self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_EXIT])
-        elif rx[0] == Stlink.DEV_SWIM_MODE:
-            self._device.xfer([Stlink.SWIM_COMMAND, Stlink.SWIM_EXIT])
+        response = self._device.transfer([self.GET_CURRENT_MODE], readSize=2)
+        if response[0] == self.DEV_DFU_MODE:
+            self._device.transfer([self.DFU_COMMAND, self.DFU_EXIT])
+        elif response[0] == self.DEV_JTAG_MODE:
+            self._device.transfer([self.JTAG_COMMAND, self.JTAG_EXIT])
+        elif response[0] == self.DEV_SWIM_MODE:
+            self._device.transfer([self.SWIM_COMMAND, self.SWIM_EXIT])
 
     def set_swd_freq(self, freq=1800000):
         if self._jtag_version < 20:
             return
-        for f, d in Stlink.SWD_FREQ_MAP.items():
+        for f, d in self.SWD_FREQ_MAP.items():
             if freq >= f:
-                response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.SWD_SET_FREQ, d], readSize=2)
+                response = self._device.transfer([self.JTAG_COMMAND, self.SWD_SET_FREQ, d], readSize=2)
                 self._check_status(response)
                 return
-        raise StlinkException("Selected SWD frequency is too low")
+        raise STLinkException("Selected SWD frequency is too low")
 
     def enter_debug(self, protocol):
         self.enter_idle()
         
-        if protocol == Stlink.Protocol.SWD:
-            protocolParam = Stlink.JTAG_ENTER_SWD
-        elif protocol == Stlink.Protocol.JTAG:
-            protocolParam = Stlink.JTAG_ENTER_JTAG_NO_CORE_RESET
-        response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_ENTER2, protocolParam, 0], readSize=2)
+        if protocol == self.Protocol.SWD:
+            protocolParam = self.JTAG_ENTER_SWD
+        elif protocol == self.Protocol.JTAG:
+            protocolParam = self.JTAG_ENTER_JTAG_NO_CORE_RESET
+        response = self._device.transfer([self.JTAG_COMMAND, self.JTAG_ENTER2, protocolParam, 0], readSize=2)
         self._check_status(response)
 
     def target_reset(self):
-        response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_DRIVE_NRST, JTAG_DRIVE_NRST_PULSE], readSize=2)
+        response = self._device.transfer([self.JTAG_COMMAND, self.JTAG_DRIVE_NRST, JTAG_DRIVE_NRST_PULSE], readSize=2)
         self._check_status(response)
     
     def drive_nreset(self, isAsserted):
-        value = Stlink.JTAG_DRIVE_NRST_LOW if isAsserted else Stlink.JTAG_DRIVE_NRST_HIGH
-        response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_DRIVE_NRST, value], readSize=2)
+        value = self.JTAG_DRIVE_NRST_LOW if isAsserted else self.JTAG_DRIVE_NRST_HIGH
+        response = self._device.transfer([self.JTAG_COMMAND, self.JTAG_DRIVE_NRST, value], readSize=2)
         self._check_status(response)
     
     def _check_status(self, response):
         status, = struct.unpack('<H', response)
-        if status != Stlink.JTAG_OK:
-            raise StlinkException("STLink error: " + Stlink.STATUS_MESSAGES.get(status, "Unknown error"))
+        if status != self.JTAG_OK:
+            raise STLinkException("STLink error: " + self.STATUS_MESSAGES.get(status, "Unknown error"))
 
     def _read_mem(self, addr, size, memcmd, max, apsel):
         result = []
         while size:
             thisTransferSize = min(size, max)
             
-            cmd = [Stlink.JTAG_COMMAND, memcmd]
+            cmd = [self.JTAG_COMMAND, memcmd]
             cmd.extend(six.iterbytes(struct.pack('<IHB', addr, thisTransferSize, apsel)))
-            result += self._device.xfer(cmd, readSize=thisTransferSize)
+            result += self._device.transfer(cmd, readSize=thisTransferSize)
             
             addr += thisTransferSize
             size -= thisTransferSize
             
             # Check status of this read.
-            response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_GETLASTRWSTATUS2], readSize=12)
+            response = self._device.transfer([self.JTAG_COMMAND, self.JTAG_GETLASTRWSTATUS2], readSize=12)
             status, _, faultAddr = struct.unpack('<HHI', response[0:8])
-            if status != Stlink.JTAG_OK:
+            if status in (self.JTAG_UNKNOWN_ERROR, self.SWD_AP_FAULT, self.SWD_DP_FAULT):
                 exc = exceptions.TransferFaultError()
                 exc.fault_address = faultAddr
                 exc.fault_length = thisTransferSize - (faultAddr - addr)
                 raise exc
+            elif status != self.JTAG_OK:
+                raise STLinkException("STLink error: " + self.STATUS_MESSAGES.get(status, "Unknown error"))
         return result
 
     def _write_mem(self, addr, data, memcmd, max, apsel):
@@ -358,29 +331,31 @@ class Stlink(object):
             thisTransferSize = min(len(data), max)
             thisTransferData = data[:thisTransferSize]
             
-            cmd = [Stlink.JTAG_COMMAND, memcmd]
+            cmd = [self.JTAG_COMMAND, memcmd]
             cmd.extend(six.iterbytes(struct.pack('<IHB', addr, thisTransferSize, apsel)))
-            self._device.xfer(cmd, writeData=thisTransferData)
+            self._device.transfer(cmd, writeData=thisTransferData)
             
             addr += thisTransferSize
             data = data[thisTransferSize:]
             
             # Check status of this write.
-            response = self._device.xfer([Stlink.JTAG_COMMAND, Stlink.JTAG_GETLASTRWSTATUS2], readSize=12)
+            response = self._device.transfer([self.JTAG_COMMAND, self.JTAG_GETLASTRWSTATUS2], readSize=12)
             status, _, faultAddr = struct.unpack('<HHI', response[0:8])
-            if status != Stlink.JTAG_OK:
+            if status in (self.JTAG_UNKNOWN_ERROR, self.SWD_AP_FAULT, self.SWD_DP_FAULT):
                 exc = exceptions.TransferFaultError()
                 exc.fault_address = faultAddr
                 exc.fault_length = thisTransferSize - (faultAddr - addr)
                 raise exc
+            elif status != self.JTAG_OK:
+                raise STLinkException("STLink error (%x): " % status + self.STATUS_MESSAGES.get(status, "Unknown error"))
 
     def read_mem32(self, addr, size, apsel):
         assert (addr & 0x3) == 0 and (size & 0x3) == 0, "address and size must be word aligned"
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
+        return self._read_mem(addr, size, self.JTAG_READMEM_32BIT, self.MAXIMUM_TRANSFER_SIZE, apsel)
 
     def write_mem32(self, addr, data, apsel):
         assert (addr & 0x3) == 0 and (len(data) & 3) == 0, "address and size must be word aligned"
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_32BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
+        self._write_mem(addr, data, self.JTAG_WRITEMEM_32BIT, self.MAXIMUM_TRANSFER_SIZE, apsel)
 
     def read_mem16(self, addr, size, apsel):
         assert (addr & 0x1) == 0 and (size & 0x1) == 0, "address and size must be half-word aligned"
@@ -389,7 +364,7 @@ class Stlink(object):
             # 16-bit r/w is only available from J26, so revert to 8-bit accesses.
             return self.read_mem8(addr, size, apsel)
         
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
+        return self._read_mem(addr, size, self.JTAG_READMEM_16BIT, self.MAXIMUM_TRANSFER_SIZE, apsel)
 
     def write_mem16(self, addr, data, apsel):
         assert (addr & 0x1) == 0 and (len(data) & 1) == 0, "address and size must be half-word aligned"
@@ -399,21 +374,21 @@ class Stlink(object):
             self.write_mem8(addr, data, apsel)
             return
         
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_16BIT, Stlink.MAXIMUM_TRANSFER_SIZE, apsel)
+        self._write_mem(addr, data, self.JTAG_WRITEMEM_16BIT, self.MAXIMUM_TRANSFER_SIZE, apsel)
 
     def read_mem8(self, addr, size, apsel):
-        return self._read_mem(addr, size, Stlink.JTAG_READMEM_8BIT, self._device.max_packet_size, apsel)
+        return self._read_mem(addr, size, self.JTAG_READMEM_8BIT, self._device.max_packet_size, apsel)
 
     def write_mem8(self, addr, data, apsel):
-        self._write_mem(addr, data, Stlink.JTAG_WRITEMEM_8BIT, self._device.max_packet_size, apsel)
+        self._write_mem(addr, data, self.JTAG_WRITEMEM_8BIT, self._device.max_packet_size, apsel)
     
     def read_dap_register(self, port, addr):
         assert ((addr & 0xf0) == 0) or (port != self.DP_PORT), "banks are not allowed for DP registers"
         assert (addr >> 16) == 0, "register address must be 16-bit"
         
-        cmd = [Stlink.JTAG_COMMAND, Stlink.JTAG_READ_DAP_REG]
+        cmd = [self.JTAG_COMMAND, self.JTAG_READ_DAP_REG]
         cmd.extend(six.iterbytes(struct.pack('<HH', port, addr)))
-        response = self._device.xfer(cmd, readSize=8)
+        response = self._device.transfer(cmd, readSize=8)
         self._check_status(response[:2])
         value, = struct.unpack('<I', response[4:8])
         return value
@@ -421,8 +396,8 @@ class Stlink(object):
     def write_dap_register(self, port, addr, value):
         assert ((addr & 0xf0) == 0) or (port != self.DP_PORT), "banks are not allowed for DP registers"
         assert (addr >> 16) == 0, "register address must be 16-bit"
-        cmd = [Stlink.JTAG_COMMAND, Stlink.JTAG_WRITE_DAP_REG]
+        cmd = [self.JTAG_COMMAND, self.JTAG_WRITE_DAP_REG]
         cmd.extend(six.iterbytes(struct.pack('<HHI', port, addr, value)))
-        response = self._device.xfer(cmd, readSize=2)
+        response = self._device.transfer(cmd, readSize=2)
         self._check_status(response)
 

@@ -17,7 +17,7 @@
 from .debug_probe import DebugProbe
 from ..core.memory_interface import MemoryInterface
 from ..core import exceptions
-from .stlink import (StlinkException, usb, stlinkv2)
+from .stlink import (STLinkException, usb, stlink)
 from ..utility import conversion
 import six
 
@@ -30,23 +30,23 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     @classmethod
     def get_all_connected_probes(cls):
         try:
-            return [cls(dev) for dev in usb.StlinkUsbInterface.get_all_connected_devices()]
-        except StlinkException as exc:
+            return [cls(dev) for dev in usb.STLinkUSBInterface.get_all_connected_devices()]
+        except STLinkException as exc:
             six.raise_from(cls._convert_exception(exc), exc)
     
     @classmethod
     def get_probe_with_id(cls, unique_id):
         try:
-            for dev in usb.StlinkUsbInterface.get_all_connected_devices():
+            for dev in usb.STLinkUSBInterface.get_all_connected_devices():
                 if dev.serial_number == unique_id:
-                    return cls(usb.StlinkUsbInterface(unique_id))
+                    return cls(usb.STLinkUSBInterface(unique_id))
             else:
                 return None
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(cls._convert_exception(exc), exc)
 
     def __init__(self, device):
-        self._link = stlinkv2.Stlink(device)
+        self._link = stlink.STLink(device)
         self._is_open = False
         self._nreset_state = False
         
@@ -56,7 +56,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     
     @property
     def vendor_name(self):
-        return "ST"
+        return self._link.vendor_name
     
     @property
     def product_name(self):
@@ -86,14 +86,14 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         try:
             self._link.open()
             self._is_open = True
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
     
     def close(self):
         try:
             self._link.close()
             self._is_open = False
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     # ------------------------------------------- #
@@ -102,8 +102,8 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     def connect(self, protocol=None):
         """Initialize DAP IO pins for JTAG or SWD"""
         try:
-            self._link.enter_debug(stlinkv2.Stlink.Protocol.SWD)
-        except StlinkException as exc:
+            self._link.enter_debug(stlink.STLink.Protocol.SWD)
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     # TODO remove
@@ -115,7 +115,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         """Deinitialize the DAP I/O pins"""
         try:
             self._link.enter_idle()
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def set_clock(self, frequency):
@@ -125,14 +125,14 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         """
         try:
             self._link.set_swd_freq(frequency)
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def reset(self):
         """Reset the target"""
         try:
             self._link.target_reset()
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def assert_reset(self, asserted):
@@ -140,7 +140,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         try:
             self._link.drive_nreset(asserted)
             self._nreset_state = asserted
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
     
     def is_reset_asserted(self):
@@ -157,8 +157,8 @@ class StlinkProbe(DebugProbe, MemoryInterface):
     
     def read_dp(self, addr, now=True):
         try:
-            result = self._link.read_dap_register(stlinkv2.Stlink.DP_PORT, addr)
-        except StlinkException as exc:
+            result = self._link.read_dap_register(stlink.STLink.DP_PORT, addr)
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
         
         def read_dp_result_callback():
@@ -168,15 +168,15 @@ class StlinkProbe(DebugProbe, MemoryInterface):
 
     def write_dp(self, addr, data):
         try:
-            result = self._link.write_dap_register(stlinkv2.Stlink.DP_PORT, addr, data)
-        except StlinkException as exc:
+            result = self._link.write_dap_register(stlink.STLink.DP_PORT, addr, data)
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def read_ap(self, addr, now=True):
         try:
             apsel = (addr & self.APSEL) >> self.APSEL_SHIFT
             result = self._link.read_dap_register(apsel, addr & 0xffff)
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
         
         def read_ap_result_callback():
@@ -188,7 +188,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
         try:
             apsel = (addr & self.APSEL) >> self.APSEL_SHIFT
             result = self._link.write_dap_register(apsel, addr & 0xffff, data)
-        except StlinkException as exc:
+        except STLinkException as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def read_ap_multiple(self, addr, count=1, now=True):
@@ -244,7 +244,7 @@ class StlinkProbe(DebugProbe, MemoryInterface):
   
     @staticmethod
     def _convert_exception(exc):
-        if isinstance(exc, StlinkException):
+        if isinstance(exc, STLinkException):
             return exceptions.ProbeError(str(exc))
         else:
             return exc

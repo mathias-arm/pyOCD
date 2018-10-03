@@ -15,11 +15,7 @@
 # limitations under the License.
 
 
-class StlinkException(Exception):
-    def __init__(self, msg):
-        self._msg = msg
-
-    def __str__(self):
-        return self._msg
+class STLinkException(RuntimeError):
+    pass
 
 

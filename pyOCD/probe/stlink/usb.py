@@ -14,30 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The MIT License (MIT)
-# 
-# Copyright (c) 2015 Pavel Revak <pavel.revak@gmail.com>
-# 
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-# 
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 from __future__ import absolute_import
-from . import StlinkException
+from . import STLinkException
 import usb.core
 import usb.util
 import logging
@@ -45,29 +23,32 @@ import six
 import threading
 from collections import namedtuple
 
+# Set to True to enable debug logs of USB data transfers.
 LOG_USB_DATA = True
 
 log = logging.getLogger('stlink.usb')
 
-StlinkInfo = namedtuple('StlinkInfo', 'version_name out_ep in_ep swv_ep')
+STLinkInfo = namedtuple('STLinkInfo', 'version_name out_ep in_ep swv_ep')
 
-class StlinkUsbInterface(object):
+##
+# @brief Provides low-level USB enumeration and transfers for STLinkV2/3 devices.
+class STLinkUSBInterface(object):
     # Command packet size.
     CMD_SIZE = 16
     
     # ST's USB vendor ID
     USB_VID = 0x0483
 
-    # Map of USB PID to device endpoint info.
+    # Map of USB PID to firmware version name and device endpoints.
     USB_PID_EP_MAP = {
         # PID              Version  OUT     IN      SWV
-        0x3748: StlinkInfo('V2',    0x02,   0x81,   0x83),
-        0x374b: StlinkInfo('V2-1',  0x01,   0x81,   0x82),
-        0x374a: StlinkInfo('V2-1',  0x01,   0x81,   0x82),  # Audio
-        0x3742: StlinkInfo('V2-1',  0x01,   0x81,   0x82),  # No MSD
-        0x374e: StlinkInfo('V3',    0x01,   0x81,   0x82),
-        0x374f: StlinkInfo('V3',    0x01,   0x81,   0x82),  # Bridge
-        0x3753: StlinkInfo('V3',    0x01,   0x81,   0x82),  # 2VCP
+        0x3748: STLinkInfo('V2',    0x02,   0x81,   0x83),
+        0x374b: STLinkInfo('V2-1',  0x01,   0x81,   0x82),
+        0x374a: STLinkInfo('V2-1',  0x01,   0x81,   0x82),  # Audio
+        0x3742: STLinkInfo('V2-1',  0x01,   0x81,   0x82),  # No MSD
+        0x374e: STLinkInfo('V3',    0x01,   0x81,   0x82),
+        0x374f: STLinkInfo('V3',    0x01,   0x81,   0x82),  # Bridge
+        0x3753: STLinkInfo('V3',    0x01,   0x81,   0x82),  # 2VCP
         }
     
     DEBUG_INTERFACE_NUMBER = 0
@@ -75,10 +56,18 @@ class StlinkUsbInterface(object):
     @classmethod
     def _usb_match(cls, dev):
         try:
-            return (dev.idVendor == cls.USB_VID) and (dev.idProduct in cls.USB_PID_EP_MAP)
+            # Check VID/PID.
+            isSTLink = (dev.idVendor == cls.USB_VID) and (dev.idProduct in cls.USB_PID_EP_MAP)
+            
+            # Try accessing the product name, which will cause a permission error on Linux. Better
+            # to error out here than later when building the device description.
+            if isSTLink:
+                dummy = dev.product
+            
+            return isSTLink
         except ValueError as error:
-            # Permission denied error gets reported as ValueError (langid)
-            log.debug(("ValueError \"{}\" while trying to access USB device fields "
+            # Permission denied error gets reported as ValueError (The device has no langid).
+            log.debug(("ValueError \"{}\" while trying to access STLink USB device fields "
                            "for idVendor=0x{:04x} idProduct=0x{:04x}. "
                            "This is probably a permission issue.").format(error, dev.idVendor, dev.idProduct))
             return False
@@ -107,21 +96,19 @@ class StlinkUsbInterface(object):
         self._ep_out = None
         self._ep_in = None
         self._ep_swv = None
-        self._xfer_counter = 0
         self._max_packet_size = 64
         self._closed = True
-        self._thread = None
-        self._receive_data = []
-        self._read_sem = threading.Semaphore(0)
     
     def open(self):
         assert self._closed
         
+        self._dev.set_configuration()
         config = self._dev.get_active_configuration()
         
-        # Debug interface is always interface 0
-        interface = config[(self.DEBUG_INTERFACE_NUMBER, self.DEBUG_INTERFACE_NUMBER)]
+        # Debug interface is always interface 0, alt setting 0.
+        interface = config[(self.DEBUG_INTERFACE_NUMBER, 0)]
         
+        # Look up endpoint objects.
         for endpoint in interface:
             if endpoint.bEndpointAddress == self._info.out_ep:
                 self._ep_out = endpoint
@@ -131,33 +118,37 @@ class StlinkUsbInterface(object):
                 self._ep_swv = endpoint
         
         if not self._ep_out:
-            raise StlinkException("Unable to find OUT endpoint")
+            raise STLinkException("Unable to find OUT endpoint")
         if not self._ep_in:
-            raise StlinkException("Unable to find IN endpoint")
+            raise STLinkException("Unable to find IN endpoint")
 
-        self._max_packet_size = self._ep_out.wMaxPacketSize
+        self._max_packet_size = self._ep_in.wMaxPacketSize
         
+        # Claim this interface to prevent other processes from accessing it.
         usb.util.claim_interface(self._dev, 0)
         
+        self._flush_rx()
         self._closed = False
-        self._start_rx()
     
     def close(self):
         assert not self._closed
         self._closed = True
-        self._read_sem.release()
-        self._thread.join()
-        assert self._receive_data[-1] is None
-        self._receive_data = []
         usb.util.release_interface(self._dev, self.DEBUG_INTERFACE_NUMBER)
         usb.util.dispose_resources(self._dev)
         self._ep_out = None
         self._ep_in = None
-        self._thread = None
 
     @property
     def serial_number(self):
         return self._dev.serial_number
+
+    @property
+    def vendor_name(self):
+        return self._dev.manufacturer
+
+    @property
+    def product_name(self):
+        return self._dev.product
 
     @property
     def version_name(self):
@@ -166,10 +157,6 @@ class StlinkUsbInterface(object):
     @property
     def max_packet_size(self):
         return self._max_packet_size
-
-    @property
-    def xfer_counter(self):
-        return self._xfer_counter
 
     def _flush_rx(self):
         # Flush the RX buffers by reading until timeout exception
@@ -180,92 +167,48 @@ class StlinkUsbInterface(object):
             # USB timeout expected
             pass
 
-    def _start_rx(self):
-        self._flush_rx()
-        
-        # Start RX thread
-        self._thread = threading.Thread(target=self._rx_task)
-        self._thread.daemon = True
-        self._thread.start()
-
-    def _rx_task(self):
-        try:
-            while not self._closed:
-                self._read_sem.acquire()
-                if not self._closed:
-                    rxData = bytearray(self._ep_in.read(self._max_packet_size, 10 * 1000))
-                    self._receive_data.append(rxData)
-        finally:
-            # Set last element of rcv_data to None on exit
-            self._receive_data.append(None)
-
-    def _write(self, data, timeout=1000):
-        self._xfer_counter += 1
-        count = self._dev.write(self._info.out_ep, data, timeout)
-        if count != len(data):
-            raise StlinkException("Error, only %d Bytes was transmitted to ST-Link instead of expected %d" % (count, len(data)))
-
-    def _prime_read(self, size):
-        for _ in range((size + self._max_packet_size + 1) // self._max_packet_size):
-            self._read_sem.release()
-    
     def _read(self, size, timeout=1000):
-        data = bytearray()
-        while len(data) < size:
-            while len(self._receive_data) == 0:
-                pass
-            if self._receive_data[0] is None:
-                raise StlinkException("STLink %s read thread exited" % self.serial_number)
-            packet = self._receive_data.pop(0)
-            data += packet
-        assert len(data) >= size, "data len (%d) > size (%d)" % (len(data), size)
-        return data[:size]
+        # Round up reads to the maximum packet size.
+        read_size = max(size, self._max_packet_size)
+#         if read_size % 4:
+#             read_size += 4 - (read_size & 0x3)
+#         return bytearray(self._ep_in.read(read_size, timeout))
+        return self._ep_in.read(read_size, timeout)
 
-#         read_size = size
-#         # Round up reads to the maximum packet size.
-# #         if read_size < self._max_packet_size:
-# #             read_size = self._max_packet_size
-# #         elif read_size % 4:
-# #             read_size += 4 - (read_size & 0x3)
-#         data = bytearray(self._dev.read(self._info.in_ep, read_size, timeout))
-#         return data #[:size]
-
-    def xfer(self, cmd, writeData=None, readSize=None, retries=0, timeout=1000):
-        while True:
-            try:
-                if len(cmd) > self.CMD_SIZE:
-                    raise StlinkException("command is too large (%d bytes, max %d bytes)" % (len(cmd), self.CMD_SIZE))
-
-                # Prime the data in phase so it happens immediately when the device readies the data.
-                if readSize is not None:
-                    self._prime_read(readSize)
-
-                # Command phase. Pad command to required 16 bytes.
-                paddedCmd = bytearray(self.CMD_SIZE)
-                paddedCmd[0:len(cmd)] = cmd
+    def transfer(self, cmd, writeData=None, readSize=None, timeout=1000):
+        # Pad command to required 16 bytes.
+        assert len(cmd) <= self.CMD_SIZE
+        paddedCmd = bytearray(self.CMD_SIZE)
+        paddedCmd[0:len(cmd)] = cmd
+        
+        try:
+            # Command phase.
+            if LOG_USB_DATA:
+                log.debug("  USB CMD> %s" % ' '.join(['%02x' % i for i in paddedCmd]))
+            count = self._ep_out.write(paddedCmd, timeout)
+            assert count == len(paddedCmd)
+            
+            # Optional data out phase.
+            if writeData is not None:
                 if LOG_USB_DATA:
-                    log.debug("  USB CMD> %s" % ' '.join(['%02x' % i for i in paddedCmd]))
-                self._write(paddedCmd, timeout)
-                
-                # Optional data out phase.
-                if writeData is not None:
-                    if LOG_USB_DATA:
-                        log.debug("  USB OUT> %s" % ' '.join(['%02x' % i for i in writeData]))
-                    self._write(writeData, timeout)
-                
-                # Optional data in phase.
-                if readSize is not None:
-                    data = self._read(readSize)
-                    if LOG_USB_DATA:
-                        log.debug("  USB IN < %s" % ' '.join(['%02x' % i for i in data]))
-                    return data
-            except usb.core.USBError as exc:
-                # Handle retries.
-                if retries > 0:
-                    retries -= 1
-                    continue
-                six.raise_from(StlinkException("USB Error: %s" % exc), exc)
-            return None
+                    log.debug("  USB OUT> %s" % ' '.join(['%02x' % i for i in writeData]))
+                count = self._ep_out.write(writeData, timeout)
+                assert count == len(writeData)
+            
+            # Optional data in phase.
+            if readSize is not None:
+                if LOG_USB_DATA:
+                    log.debug("  USB IN < (%d bytes)" % readSize)
+                data = self._read(readSize)
+                if LOG_USB_DATA:
+                    log.debug("  USB IN < %s" % ' '.join(['%02x' % i for i in data]))
+                return data
+        except usb.core.USBError as exc:
+            six.raise_from(STLinkException("USB Error: %s" % exc), exc)
+        return None
+
+    def read_swv(self, size, timeout=1000):
+        return self._ep_swv.read(size, timeout)
     
     def __repr__(self):
         return "<{} @ {:#x} vid={:#06x} pid={:#06x} sn={} version={}>".format(

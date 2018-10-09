@@ -15,27 +15,32 @@
 # limitations under the License.
 
 from .debug_probe import DebugProbe
-from ..core.dap_interface import DAPInterface
 from ..core import exceptions
 from .jlink import JLinkError
 from .jlink.jlink import JLink
 from .jlink.usb import JLinkUSBInterface
-from ..board.board_ids import BOARD_ID_TO_INFO
 import six
 from time import sleep
 
 ## @brief Wraps a JLink as a DebugProbe.
-class JLinkProbe(DebugProbe, DAPInterface):
+class JLinkProbe(DebugProbe):
 
-    # Map from DebugProbe protocol types to/from DAPAccess port types.
-#     PORT_MAP = {
-#         DebugProbe.Protocol.DEFAULT: DAPAccess.PORT.DEFAULT,
-#         DebugProbe.Protocol.SWD: DAPAccess.PORT.SWD,
-#         DebugProbe.Protocol.JTAG: DAPAccess.PORT.JTAG,
-#         DAPAccess.PORT.DEFAULT: DebugProbe.Protocol.DEFAULT,
-#         DAPAccess.PORT.SWD: DebugProbe.Protocol.SWD,
-#         DAPAccess.PORT.JTAG: DebugProbe.Protocol.JTAG,
-#         }
+    # APnDP constants.
+    DP = 0
+    AP = 1
+    
+    ACK_OK = 0b001
+    ACK_WAIT = 0b010
+    ACK_FAULT = 0b100
+    
+    # Bitmasks for AP register address fields.
+    A32 = 0x0000000c
+    APBANKSEL = 0x000000f0
+    APSEL = 0xff000000
+    APSEL_APBANKSEL = APSEL | APBANKSEL
+    
+    # Address of DP's SELECT register.
+    DP_SELECT = 0x8
     
     @classmethod
     def get_all_connected_probes(cls):
@@ -58,9 +63,10 @@ class JLinkProbe(DebugProbe, DAPInterface):
     def __init__(self, device):
         self._link = JLink(device)
         self._supported_protocols = None
-        self._protocol = DebugProbe.Protocol.DEFAULT
+        self._protocol = None
         self._default_protocol = None
         self._is_open = False
+        self._dp_select = -1
         
     @property
     def description(self):
@@ -156,7 +162,8 @@ class JLinkProbe(DebugProbe, DAPInterface):
 
     def disconnect(self):
         """Deinitialize the DAP I/O pins"""
-        pass
+        self._protocol = None
+        self._invalidate_cached_registers()
 
     def set_clock(self, frequency):
         """Set the frequency for JTAG and SWD in Hz
@@ -174,13 +181,16 @@ class JLinkProbe(DebugProbe, DAPInterface):
             self.assert_reset(True)
             sleep(0.5)
             self.assert_reset(False)
+
+            self._invalidate_cached_registers()
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
 
     def assert_reset(self, asserted):
         """Assert or de-assert target reset line"""
         try:
-            self._link.srst(0 if asserted else 1)
+            self._link.reset(0 if asserted else 1)
+            self._invalidate_cached_registers()
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
     
@@ -202,29 +212,18 @@ class JLinkProbe(DebugProbe, DAPInterface):
     # ------------------------------------------- #
     #          DAP Access functions
     # ------------------------------------------- #
-    def write_reg(self, reg_id, value, dap_index=0):
-        """Write a single word to a DP or AP register"""
-        try:
-            ack = self._link.write_reg(reg_id, value, dap_index)
-        except JLinkError as exc:
-            six.raise_from(self._convert_exception(exc), exc)
-        else:
-            if ack == 1:
-                raise exceptions.TransferFaultError()
-            elif ack == 2:
-                raise exceptions.TransferError()
 
-    def read_reg(self, reg_id, dap_index=0, now=True):
-        """Read a single word to a DP or AP register"""
+    def read_dp(self, addr, now=True):
         try:
-            ack, value, parityOk = self._link.read_reg(reg_id, dap_index, now)
-            
+            ack, value, parityOk = self._link.read_reg(self.DP, addr)
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
         else:
-            if ack == 1:
+            if ack == JLink.ACK_FAULT:
+                self._invalidate_cached_registers()
                 raise exceptions.TransferFaultError()
-            elif ack == 2 or not parityOk:
+            elif ack != JLink.ACK_OK or not parityOk:
+                self._invalidate_cached_registers()
                 raise exceptions.TransferError()
             
             def read_reg_cb():
@@ -232,29 +231,76 @@ class JLinkProbe(DebugProbe, DAPInterface):
         
             return value if now else read_reg_cb
 
-    def reg_write_repeat(self, num_repeats, reg_id, data_array, dap_index=0):
-        """Write one or more words to the same DP or AP register"""
+    def write_dp(self, addr, data):
+        # Skip writing DP SELECT register if its value is not changing.
+        if addr == self.DP_SELECT:
+            if data == self._dp_select:
+                return
+            self._dp_select = data
+
         try:
-            return self._link.reg_write_repeat(num_repeats, reg_id, data_array, dap_index)
+            ack = self._link.write_reg(self.DP, addr, value)
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
+        else:
+            if ack == JLink.ACK_FAULT:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferFaultError()
+            elif ack != JLink.ACK_OK:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferError()
 
-    def reg_read_repeat(self, num_repeats, reg_id, dap_index=0, now=True):
-        """Read one or more words from the same DP or AP register"""
+    def read_ap(self, addr, now=True):
+        assert type(addr) in (six.integer_types)
         try:
-            result = self._link.reg_read_repeat(num_repeats, reg_id, dap_index, now)
-
-            # Need to wrap the deferred callback to convert exceptions.
+            self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
+            ack, value, parityOk = self._link.read_reg(self.AP, addr)
+        except JLinkError as exc:
+            six.raise_from(self._convert_exception(exc), exc)
+        else:
+            if ack == JLink.ACK_FAULT:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferFaultError()
+            elif ack != JLink.ACK_OK or not parityOk:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferError()
+            
             def read_reg_cb():
-                try:
-                    return result()
-                except JLinkError as exc:
-                    six.raise_from(self._convert_exception(exc), exc)
+                return value
+        
+            return value if now else read_reg_cb
 
-            return result if now else read_reg_cb
+    def write_ap(self, addr, data):
+        assert type(addr) in (six.integer_types)
+        try:
+            self.write_dp(self.DP_SELECT, addr & self.APSEL_APBANKSEL)
+            ack = self._link.write_reg(self.AP, addr, value)
         except JLinkError as exc:
             six.raise_from(self._convert_exception(exc), exc)
-  
+        else:
+            if ack == JLink.ACK_FAULT:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferFaultError()
+            elif ack != JLink.ACK_OK:
+                self._invalidate_cached_registers()
+                raise exceptions.TransferError()
+
+    def read_ap_multiple(self, addr, count=1, now=True):
+        results = [self.read_ap(addr, now=True) for n in range(count)]
+        
+        def read_ap_multiple_result_callback():
+            return result
+        
+        return results if now else read_ap_multiple_result_callback
+
+    def write_ap_multiple(self, addr, values):
+        for v in values:
+            self.write_ap(addr, v)
+
+    def _invalidate_cached_registers(self):
+        # Invalidate cached DP SELECT register.
+        self._dp_select = -1
+
     @staticmethod
     def _convert_exception(exc):
         if isinstance(exc, JLinkError):

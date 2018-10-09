@@ -14,152 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import JLinkError
-from . import (swd, bitstring)
-from ...pyDAPAccess import DAPAccessIntf
+from . import (JLinkError, swd, bitstring)
+from .constants import (Commands, Capabilities)
 import struct
 import usb.core
 import usb.util
 
-_TRST_TIME = 0.01
-_SRST_TIME = 0.01
-
-_MHz = 1000000.0
-_KHz = 1000.0
-_FREQ = 12.0 * _MHz
-
 ## @brief J-Link Device Driver
 class JLink(object):
-
-    # Document RM08001-R7 J-Link USB Protocol
-    # Commands
-    EMU_CMD_VERSION                       = 0x01 # Retrieves the firmware version.
-    EMU_CMD_RESET_TRST                    = 0x02
-    EMU_CMD_RESET_TARGET                  = 0x03
-    EMU_CMD_SET_SPEED                     = 0x05
-    EMU_CMD_GET_STATE                     = 0x07
-    EMU_CMD_SET_KS_POWER                  = 0x08
-    EMU_CMD_REGISTER                      = 0x09
-    EMU_CMD_GET_SPEEDS                    = 0xc0 # Retrieves the base freq. and the min.divider of the emulator CPU.
-    EMU_CMD_GET_HW_INFO                   = 0xc1
-    EMU_CMD_GET_COUNTERS                  = 0xc2
-    EMU_CMD_SELECT_IF                     = 0xc7
-    EMU_CMD_HW_CLOCK                      = 0xc8
-    EMU_CMD_HW_TMS0                       = 0xc9
-    EMU_CMD_HW_TMS1                       = 0xca
-    EMU_CMD_HW_DATA0                      = 0xcb
-    EMU_CMD_HW_DATA1                      = 0xcc
-    EMU_CMD_HW_JTAG                       = 0xcd
-    EMU_CMD_HW_JTAG2                      = 0xce
-    EMU_CMD_HW_JTAG3                      = 0xcf
-    EMU_CMD_HW_RELEASE_RESET_STOP_EX      = 0xd0
-    EMU_CMD_HW_RELEASE_RESET_STOP_TIMED   = 0xd1
-    EMU_CMD_GET_MAX_MEM_BLOCK             = 0xd4  # Retrieves the maximum memory block-size.
-    EMU_CMD_HW_JTAG_WRITE                 = 0xd5
-    EMU_CMD_HW_JTAG_GET_RESULT            = 0xd6
-    EMU_CMD_HW_RESET0                     = 0xdc
-    EMU_CMD_HW_RESET1                     = 0xdd
-    EMU_CMD_HW_TRST0                      = 0xde
-    EMU_CMD_HW_TRST1                      = 0xdf
-    EMU_CMD_GET_CAPS                      = 0xe8 # Retrieves capabilities of the emulator.
-    EMU_CMD_GET_CPU_CAPS                  = 0xe9
-    EMU_CMD_EXEC_CPU_CMD                  = 0xea
-    EMU_CMD_GET_CAPS_EX                   = 0xed # Retrieves capabilities (including extended ones) of the emulator.
-    EMU_CMD_GET_HW_VERSION                = 0xf0 # Retrieves the hardware version of the emulator.
-    EMU_CMD_WRITE_DCC                     = 0xf1
-    EMU_CMD_READ_CONFIG                   = 0xf2
-    EMU_CMD_WRITE_CONFIG                  = 0xf3
-    EMU_CMD_WRITE_MEM                     = 0xf4
-    EMU_CMD_READ_MEM                      = 0xf5
-    EMU_CMD_MEASURE_RTCK_REACT            = 0xf6
-    EMU_CMD_WRITE_MEM_ARM79               = 0xf7
-    EMU_CMD_READ_MEM_ARM79                = 0xf8
-    
-    EMU_REG_CMD_REGISTER                  = 0x64
-    EMU_REG_CMD_UNREGISTER                = 0x65
-    
-    REG_HEADER_SIZE = 8
-    REG_MIN_SIZE = 76
-
-    # Capabilities: EMU_CMD_GET_CAPS bits
-    EMU_CAP_RESERVED_1            = 0
-    EMU_CAP_GET_HW_VERSION        = 1
-    EMU_CAP_WRITE_DCC             = 2
-    EMU_CAP_ADAPTIVE_CLOCKING     = 3
-    EMU_CAP_READ_CONFIG           = 4
-    EMU_CAP_WRITE_CONFIG          = 5
-    EMU_CAP_TRACE                 = 6
-    EMU_CAP_WRITE_MEM             = 7
-    EMU_CAP_READ_MEM              = 8
-    EMU_CAP_SPEED_INFO            = 9
-    EMU_CAP_EXEC_CODE             = 10
-    EMU_CAP_GET_MAX_BLOCK_SIZE    = 11
-    EMU_CAP_GET_HW_INFO           = 12
-    EMU_CAP_SET_KS_POWER          = 13
-    EMU_CAP_RESET_STOP_TIMED      = 14
-    EMU_CAP_RESERVED_2            = 15
-    EMU_CAP_MEASURE_RTCK_REACT    = 16
-    EMU_CAP_SELECT_IF             = 17
-    EMU_CAP_RW_MEM_ARM79          = 18
-    EMU_CAP_GET_COUNTERS          = 19
-    EMU_CAP_READ_DCC              = 20
-    EMU_CAP_GET_CPU_CAPS          = 21
-    EMU_CAP_EXEC_CPU_CMD          = 22
-    EMU_CAP_SWO                   = 23
-    EMU_CAP_WRITE_DCC_EX          = 24
-    EMU_CAP_UPDATE_FIRMWARE_EX    = 25
-    EMU_CAP_FILE_IO               = 26
-    EMU_CAP_REGISTER              = 27
-    EMU_CAP_INDICATORS            = 28
-    EMU_CAP_TEST_NET_SPEED        = 29
-    EMU_CAP_RAWTRACE              = 30
-    EMU_CAP_GET_EXT_CAPS          = 31
-
-    capabilities = {
-        EMU_CAP_RESERVED_1         : "Always 1.",
-        EMU_CAP_GET_HW_VERSION     : "EMU_CMD_GET_HARDWARE_VERSION",
-        EMU_CAP_WRITE_DCC          : "EMU_CMD_WRITE_DCC",
-        EMU_CAP_ADAPTIVE_CLOCKING  : "adaptive clocking",
-        EMU_CAP_READ_CONFIG        : "EMU_CMD_READ_CONFIG",
-        EMU_CAP_WRITE_CONFIG       : "EMU_CMD_WRITE_CONFIG",
-        EMU_CAP_TRACE              : "trace commands",
-        EMU_CAP_WRITE_MEM          : "EMU_CMD_WRITE_MEM",
-        EMU_CAP_READ_MEM           : "EMU_CMD_READ_MEM",
-        EMU_CAP_SPEED_INFO         : "EMU_CMD_GET_SPEED",
-        EMU_CAP_EXEC_CODE          : "EMU_CMD_CODE_...",
-        EMU_CAP_GET_MAX_BLOCK_SIZE : "EMU_CMD_GET_MAX_BLOCK_SIZE",
-        EMU_CAP_GET_HW_INFO        : "EMU_CMD_GET_HW_INFO",
-        EMU_CAP_SET_KS_POWER       : "EMU_CMD_SET_KS_POWER",
-        EMU_CAP_RESET_STOP_TIMED   : "EMU_CMD_HW_RELEASE_RESET_STOP_TIMED",
-        EMU_CAP_RESERVED_2         : "Reserved",
-        EMU_CAP_MEASURE_RTCK_REACT : "EMU_CMD_MEASURE_RTCK_REACT",
-        EMU_CAP_SELECT_IF          : "EMU_CMD_HW_SELECT_IF",
-        EMU_CAP_RW_MEM_ARM79       : "EMU_CMD_READ/WRITE_MEM_ARM79",
-        EMU_CAP_GET_COUNTERS       : "EMU_CMD_GET_COUNTERS",
-        EMU_CAP_READ_DCC           : "EMU_CMD_READ_DCC",
-        EMU_CAP_GET_CPU_CAPS       : "EMU_CMD_GET_CPU_CAPS",
-        EMU_CAP_EXEC_CPU_CMD       : "EMU_CMD_EXEC_CPU_CMD",
-        EMU_CAP_SWO                : "EMU_CMD_SWO",
-        EMU_CAP_WRITE_DCC_EX       : "EMU_CMD_WRITE_DCC_EX",
-        EMU_CAP_UPDATE_FIRMWARE_EX : "EMU_CMD_UPDATE_FIRMWARE_EX",
-        EMU_CAP_FILE_IO            : "EMU_CMD_FILE_IO",
-        EMU_CAP_REGISTER           : "EMU_CMD_REGISTER",
-        EMU_CAP_INDICATORS         : "EMU_CMD_INDICATORS",
-        EMU_CAP_TEST_NET_SPEED     : "EMU_CMD_TEST_NET_SPEED",
-        EMU_CAP_RAWTRACE           : "EMU_CMD_RAWTRACE",
-        EMU_CAP_GET_EXT_CAPS       : "EMU_CAP_GET_EXT_CAPS",
-    }
-
-    # CPU Capabilities: EMU_CMD_GET_CPU_CAPS bits
-    CPU_CAP_RESERVED  = 0
-    CPU_CAP_WRITE_MEM = 1
-    CPU_CAP_READ_MEM  = 2
-
-    cpu_capabilities = {
-        CPU_CAP_RESERVED    : "Always 1.",
-        CPU_CAP_WRITE_MEM   : "CPU_CMD_WRITE_MEM",
-        CPU_CAP_READ_MEM    : "CPU_CMD_READ_MEM",
-    }
 
     # interface selection
     TIF_JTAG = 0
@@ -167,19 +29,6 @@ class JLink(object):
 
     # speed (in KHz)
     MAX_SPEED = 12000
-
-    # Maps from AP/DP register enum to APnDP and A32 values.
-    DPAP_REG_MAP = {
-        #                           APnDP   A32
-        DAPAccessIntf.REG.DP_0x0 : (0,      0x0),
-        DAPAccessIntf.REG.DP_0x4 : (0,      0x1),
-        DAPAccessIntf.REG.DP_0x8 : (0,      0x2),
-        DAPAccessIntf.REG.DP_0xC : (0,      0x3),
-        DAPAccessIntf.REG.AP_0x0 : (1,      0x0),
-        DAPAccessIntf.REG.AP_0x4 : (1,      0x1),
-        DAPAccessIntf.REG.AP_0x8 : (1,      0x2),
-        DAPAccessIntf.REG.AP_0xC : (1,      0x3),
-        }
     
     # JTAG to SWD sequence.
     #
@@ -202,75 +51,76 @@ class JLink(object):
     @property
     def unique_id(self):
         return self.usb_dev.serial_number
+    
+    @property
+    def firmware_version(self):
+        return self.fw_version
+    
+    @property
+    def hardware_version(self):
+        return self.hw_version
 
     def open(self):
-        """Open a new interface to the specified J-Link device"""
         self.usb_dev.open()
-        self.fw_version = self.get_version()
-        self.caps = self.get_capabilities()
-        if self.caps & (1 << JLink.EMU_CAP_GET_EXT_CAPS):
-            self.ext_caps = self.get_extended_capabilities()
-        self.hw_version = self.get_hw_version()
+        self._read_firmware_version()
+        self._read_capabilities()
+        self._read_hw_version()
         self.config = self.get_config()
         self.get_state()
-        self.hw_jtag_cmd = JLink.EMU_CMD_HW_JTAG3
-        if self.caps & (1 << JLink.EMU_CAP_REGISTER):
+        self.hw_jtag_cmd = Commands.EMU_CMD_HW_JTAG3
+        if self.caps & (1 << Capabilities.EMU_CAP_REGISTER):
             self.register()
         self.select_interface(JLink.TIF_SWD)
         self.set_frequency(100)
 
     def close(self):
-        """Close the J-Link interface"""
         self.usb_dev.close()
 
-    def get_version(self):
-        """Return the firmware version"""
-        self.usb_dev.write_data([JLink.EMU_CMD_VERSION,])
+    def _read_firmware_version(self):
+        self.usb_dev.write_data([Commands.EMU_CMD_VERSION,])
         n, = struct.unpack('<H', self.usb_dev.read_data(2))
         x = self.usb_dev.read_data(n)
         # split on nulls, get rid of empty strings
-        return [s.decode() for s in x.split(b'\x00') if len(s)]
+        self.fw_version = [s.decode() for s in x.split(b'\x00') if len(s)]
 
-    def get_capabilities(self):
-        """Return capabilities"""
-        self.usb_dev.write_data([JLink.EMU_CMD_GET_CAPS,])
-        return struct.unpack('<I', self.usb_dev.read_data(4))[0]
+    def _read_capabilities(self):
+        # Read basic capabilities.
+        self.usb_dev.write_data([Commands.EMU_CMD_GET_CAPS,])
+        self.caps = struct.unpack('<I', self.usb_dev.read_data(4))[0]
+        
+        # Read extended capabilities.
+        if self.caps & (1 << Capabilities.EMU_CAP_GET_EXT_CAPS):
+            self.usb_dev.write_data([Commands.EMU_CMD_GET_CAPS_EX,])
+            self.ext_caps = struct.unpack('<32B', self.usb_dev.read_data(32))
 
-    def get_extended_capabilities(self):
-        """Return extended capabilities"""
-        self.usb_dev.write_data([JLink.EMU_CMD_GET_CAPS_EX,])
-        return struct.unpack('<32B', self.usb_dev.read_data(32))
-
-    def get_hw_version(self):
-        """Return the hardware version"""
-        if not (self.caps & (1 << JLink.EMU_CAP_GET_HW_VERSION)):
-            raise JLinkError("EMU_CMD_GET_HW_VERSION not supported")
-        self.usb_dev.write_data([JLink.EMU_CMD_GET_HW_VERSION,])
+    def _read_hw_version(self):
+        if not (self.caps & (1 << Capabilities.EMU_CAP_GET_HW_VERSION)):
+            self.hw_version = {}
+            return
+        
+        self.usb_dev.write_data([Commands.EMU_CMD_GET_HW_VERSION,])
         x, = struct.unpack('<I', self.usb_dev.read_data(4))
         ver = {}
         ver['type'] = (x / 1000000) % 100
         ver['major'] = (x / 10000) % 100
         ver['minor'] = (x / 100) % 100
         ver['revision'] = x % 100
-        return ver
+        self.hw_version = ver
 
     def get_max_mem_block(self):
-        """Return the maximum memory block size of the device"""
-        if not (self.caps & (1 << JLink.EMU_CAP_GET_MAX_BLOCK_SIZE)):
+        if not (self.caps & (1 << Capabilities.EMU_CAP_GET_MAX_BLOCK_SIZE)):
             raise JLinkError("EMU_CMD_GET_MAX_MEM_BLOCK not supported")
-        self.usb_dev.write_data([JLink.EMU_CMD_GET_MAX_MEM_BLOCK,])
+        self.usb_dev.write_data([Commands.EMU_CMD_GET_MAX_MEM_BLOCK,])
         return struct.unpack('<I', self.usb_dev.read_data(4))[0]
 
     def get_config(self):
-        """Return the 256 byte configuration block"""
-        if not (self.caps & (1 << JLink.EMU_CAP_READ_CONFIG)):
+        if not (self.caps & (1 << Capabilities.EMU_CAP_READ_CONFIG)):
             raise JLinkError("EMU_CMD_READ_CONFIG not supported")
-        self.usb_dev.write_data([JLink.EMU_CMD_READ_CONFIG,])
+        self.usb_dev.write_data([Commands.EMU_CMD_READ_CONFIG,])
         return self.usb_dev.read_data(256)
 
     def get_state(self):
-        """Return the state of the JTAG interface pins"""
-        self.usb_dev.write_data([JLink.EMU_CMD_GET_STATE,])
+        self.usb_dev.write_data([Commands.EMU_CMD_GET_STATE,])
         x = struct.unpack('<HBBBBBB', self.usb_dev.read_data(8))
         state = {}
         state['vref'] = x[0]
@@ -283,37 +133,29 @@ class JLink(object):
         return state
 
     def get_interfaces(self):
-        """Return a bitmask of available interfaces"""
-        if not (self.caps & (1 << JLink.EMU_CAP_SELECT_IF)):
+        if not (self.caps & (1 << Capabilities.EMU_CAP_SELECT_IF)):
             raise JLinkError("EMU_CMD_SELECT_IF not supported")
-        self.usb_dev.write_data([JLink.EMU_CMD_SELECT_IF, 0xff])
+        self.usb_dev.write_data([Commands.EMU_CMD_SELECT_IF, 0xff])
         return struct.unpack('<I', self.usb_dev.read_data(4))[0]
 
-    def select_interface(self, itf):
-        """Select the JTAG/SWD interface"""
-#         x = self.get_interfaces()
-#         if not (x & (1 << itf)):
-#             raise JLinkError("interface %d not supported" % itf)
-        self.usb_dev.write_data([JLink.EMU_CMD_SELECT_IF, 1<<itf])
+    def select_interface(self, interface):
+        self.usb_dev.write_data([Commands.EMU_CMD_SELECT_IF, (1 << interface)])
         return struct.unpack('<I', self.usb_dev.read_data(4))[0]
 
     def register(self):
-        """Taken from openocd jlink.c - not sure what it does
-           comment says - "Registration is sometimes necessary for SWD to work"
-           Segger doesn't document it.
-        """
-        if not (self.caps & (1 << JLink.EMU_CAP_REGISTER)):
+        if not (self.caps & (1 << Capabilities.EMU_CAP_REGISTER)):
             raise JLinkError("EMU_CMD_SELECT_IF not supported")
-        cmd = [JLink.EMU_CMD_REGISTER,JLink.EMU_REG_CMD_REGISTER,0,0,0,0,0,0,0,0,0,0,0,0]
+#         cmd = [Commands.EMU_CMD_REGISTER,JLink.EMU_REG_CMD_REGISTER,0,0,0,0,0,0,0,0,0,0,0,0]
+        cmd = [Commands.EMU_CMD_REGISTER,0,0,0,0,0,0,0,0,0,0,0,0]
         self.usb_dev.write_data(cmd)
-        data = self.usb_dev.read_data(JLink.REG_MIN_SIZE)
+        data = self.usb_dev.read_data(Commands.REG_MIN_SIZE)
         handle, num, entrySize, infoSize = struct.unpack('<HHHH', data[0:JLink.REG_HEADER_SIZE])
         tableSize = num * entrySize
         size = JLink.REG_HEADER_SIZE + tableSize + infoSize
         print("handle=%d; num=%d; entrySize=%d; infoSize=%d; tableSize=%d; size=%d" % (handle, num, entrySize, infoSize, tableSize, size))
-        if size > JLink.REG_MIN_SIZE:
-            print("reg: reading extra %d bytes" % (size - JLink.REG_MIN_SIZE))
-            data += self.usb_dev.read_data(size - JLink.REG_MIN_SIZE)
+        if size > Commands.REG_MIN_SIZE:
+            print("reg: reading extra %d bytes" % (size - Commands.REG_MIN_SIZE))
+            data += self.usb_dev.read_data(size - Commands.REG_MIN_SIZE)
         for i in range(num):
             offset = JLink.REG_HEADER_SIZE + i * entrySize
             connInfo = data[offset:offset + entrySize]
@@ -321,47 +163,18 @@ class JLink(object):
             print("conn %d: pid=%d, hid=%d, iid=%d, cid=%d, handle=%d, timestamp=%d" % (i, pid, hid, iid, cid, handle, timestamp))
 
     def set_frequency(self, f):
-        """set JTAG frequency (Hz)"""
         if f < 0:
             speed = 0xffff
         else:
             speed = f // 1000
             if speed > JLink.MAX_SPEED:
                 speed = JLink.MAX_SPEED
-        cmd = [JLink.EMU_CMD_SET_SPEED, speed & 0xff, (speed >> 8) & 0xff,]
+        cmd = [Commands.EMU_CMD_SET_SPEED, speed & 0xff, (speed >> 8) & 0xff,]
         self.usb_dev.write_data(cmd)
 
-    def trst(self, x):
-        """Control the TRST line"""
-        cmd = (JLink.EMU_CMD_HW_TRST0, JLink.EMU_CMD_HW_TRST1)[x]
+    def reset(self, x):
+        cmd = (Commands.EMU_CMD_HW_RESET0, Commands.EMU_CMD_HW_RESET1)[x]
         self.usb_dev.write_data([cmd,])
-
-    def srst(self, x):
-        """Control the SRST line"""
-        cmd = (JLink.EMU_CMD_HW_RESET0, JLink.EMU_CMD_HW_RESET1)[x]
-        self.usb_dev.write_data([cmd,])
-
-    def hw_jtag_write(self, tms, tdi, tdo = None):
-        #print('tms: %s' % tms.bit_str())
-        #print('tdi: %s' % tdi.bit_str())
-        n = len(tms)
-        assert len(tdi) == n
-        cmd = [self.hw_jtag_cmd, 0, n & 0xff, (n >> 8) & 0xff]
-        cmd.extend(tms.get())
-        cmd.extend(tdi.get())
-        self.usb_dev.write_data(cmd)
-        nbytes = (n + 7) >> 3
-        assert nbytes % 64
-        if self.hw_jtag_cmd == JLink.EMU_CMD_HW_JTAG3:
-            rd = self.usb_dev.read_data(nbytes + 1)
-            if rd[-1] != 0:
-                raise JLinkError("EMU_CMD_HW_JTAG3 error")
-            rd = rd[:-1]
-        else:
-            rd = self.usb_dev.read_data(nbytes)
-        if tdo is not None:
-            tdo.set(n, rd)
-            #print('tdo: %s' % tdo.bit_str())
 
     def _swd_write(self, numbits, dir, swdio):
         numbytes = (numbits + 7) // 8
@@ -386,9 +199,8 @@ class JLink(object):
         idleBits = bitstring.zeros(clocks)
         result = self._swd_write(clocks, bitstring.ones(clocks).bytes, idleBits.bytes)
 
-    def write_reg(self, reg_id, value, dap_index=0):
+    def write_reg(self, APnDP, A32, value):
         """Write a single word to a DP or AP register"""
-        APnDP, A32 = self.DPAP_REG_MAP[reg_id]
         swdioBits, dirBits = self._swd.generate_write(APnDP, A32, value)
         
         # Insert 8 idle cycles before.
@@ -400,9 +212,8 @@ class JLink(object):
         print("result=",result,"ack=",ack)
         return ack
 
-    def read_reg(self, reg_id, dap_index=0, now=True):
+    def read_reg(self, APnDP, A32):
         """Read a single word to a DP or AP register"""
-        APnDP, A32 = self.DPAP_REG_MAP[reg_id]
         swdioBits, dirBits = self._swd.generate_read(APnDP, A32)
         
         # Insert 8 idle cycles before.
@@ -413,25 +224,7 @@ class JLink(object):
         ack, value, parityOk = self._swd.extract_read_result(result)
         print("result=",result,"ack=",ack,"value=",value,"parityOk=",parityOk)
         
-        # Need to wrap the deferred callback to convert exceptions.
-#         def read_reg_cb():
-#             return ack, value, parityOk
-        
-        return (ack, value, parityOk) #if now else read_reg_cb
-
-    def reg_write_repeat(self, num_repeats, reg_id, data_array, dap_index=0):
-        """Write one or more words to the same DP or AP register"""
-        pass
-
-    def reg_read_repeat(self, num_repeats, reg_id, dap_index=0, now=True):
-        """Read one or more words from the same DP or AP register"""
-        pass
-
-        # Need to wrap the deferred callback to convert exceptions.
-        def read_reg_cb():
-            pass
-
-        return result if now else read_reg_cb
+        return (ack, value, parityOk)
 
     def __str__(self):
         s = ['%s' % x for x in self.fw_version]

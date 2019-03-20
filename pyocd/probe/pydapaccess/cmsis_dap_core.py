@@ -42,7 +42,8 @@ class Command:
     DAP_SWO_CONTROL = 0x1A
     DAP_SWO_STATUS = 0x1B
     DAP_SWO_DATA = 0x1C
-    DAP_SWD_SEQUENCE = 0x21
+    DAP_SWD_SEQUENCE = 0x1D # Only CMSIS-DAP v1.2 or higher
+    DAP_SWO_EXTENDED_STATUS = 0x1E
     DAP_QUEUE_COMMANDS = 0x7E
     DAP_EXECUTE_COMMANDS = 0x7F
     DAP_VENDOR0 = 0x80 # Start of vendor-specific command IDs.
@@ -53,7 +54,8 @@ class Capabilities:
     SWO_UART = 0x04
     SWO_MANCHESTER = 0x08
     ATOMIC_COMMANDS = 0x10
-    DAP_SWD_SEQUENCE = 0x20
+    TEST_DOMAIN_TIMER = 0x20
+    SWO_STREAMING_TRACE = 0x40
 
 class Pin:
     NONE = 0x00 # Used to read current pin values without changing.
@@ -67,6 +69,7 @@ class Pin:
 # Info IDs that return integer values.
 INTEGER_INFOS = [
     DAPAccessIntf.ID.CAPABILITIES,
+    DAPAccessIntf.ID.TEST_DOMAIN_TIMER,
     DAPAccessIntf.ID.SWO_BUFFER_SIZE,
     DAPAccessIntf.ID.MAX_PACKET_COUNT,
     DAPAccessIntf.ID.MAX_PACKET_SIZE

@@ -21,6 +21,7 @@ import logging
 from enum import IntEnum
 from elftools.elf.elffile import ELFFile
 from elftools.dwarf.dwarfinfo import DWARFInfo
+from elftools.dwarf import constants
 
 from ..types import (
     InvalidTypeDefinition,
@@ -36,53 +37,34 @@ from ...utility.compatibility import to_str_safe
 
 LOG = logging.getLogger(__name__)
 
-class DW_ATE(IntEnum):
-    """! @brief Enum of DWARF base type encodings."""
-    DW_ATE_address = 0x01
-    DW_ATE_boolean = 0x02
-    DW_ATE_complex_float = 0x03
-    DW_ATE_float = 0x04
-    DW_ATE_signed = 0x05
-    DW_ATE_signed_char = 0x06
-    DW_ATE_unsigned = 0x07
-    DW_ATE_unsigned_char = 0x08
-    DW_ATE_imaginary_float = 0x09
-    DW_ATE_packed_decimal = 0x0a
-    DW_ATE_numeric_string = 0x0b
-    DW_ATE_edited = 0x0c
-    DW_ATE_signed_fixed = 0x0d
-    DW_ATE_unsigned_fixed = 0x0e
-    DW_ATE_decimal_float = 0x0f
-    DW_ATE_UTF = 0x10 # New in DWARF4
-
 ## @brief Map from DWARF scalar types to struct module format strings used by ScalarType.
 SCALAR_FORMAT_MAP = {
-    DW_ATE.DW_ATE_address : {
+    constants.DW_ATE_address : {
         4 : 'L',
         },
-    DW_ATE.DW_ATE_boolean : {
+    constants.DW_ATE_boolean : {
         1 : '?',
         },
-    DW_ATE.DW_ATE_float : {
+    constants.DW_ATE_float : {
         4 : 'f',
         8 : 'd',
         },
-    DW_ATE.DW_ATE_signed : {
+    constants.DW_ATE_signed : {
         1 : 'b',
         2 : 'h',
         4 : 'l',
         8 : 'q',
         },
-    DW_ATE.DW_ATE_signed_char : {
+    constants.DW_ATE_signed_char : {
         1 : 'b',
         },
-    DW_ATE.DW_ATE_unsigned : {
+    constants.DW_ATE_unsigned : {
         1 : 'B',
         2 : 'H',
         4 : 'L',
         8 : 'Q',
         },
-    DW_ATE.DW_ATE_unsigned_char : {
+    constants.DW_ATE_unsigned_char : {
         1 : 'B',
         },
     }
@@ -144,7 +126,7 @@ class DwarfTypeDecoder(object):
     def _handle_type_die(self, die):
         if die.tag == 'DW_TAG_base_type':
             name = to_str_safe(die.attributes['DW_AT_name'].value)
-            encoding = DW_ATE(die.attributes['DW_AT_encoding'].value)
+            encoding = die.attributes['DW_AT_encoding'].value
             if 'DW_AT_byte_size' in die.attributes:
                 byte_size = die.attributes['DW_AT_byte_size'].value
                 try:

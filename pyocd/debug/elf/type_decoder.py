@@ -69,6 +69,10 @@ SCALAR_FORMAT_MAP = {
         },
     }
 
+class PendedTypeException(Exception):
+    """! @brief Exception used to skip to next DIE."""
+    pass
+
 class DwarfTypeDecoder(object):
     """! @brief Builds a data type hierarchy from DWARF debug info."""
     
@@ -101,6 +105,9 @@ class DwarfTypeDecoder(object):
                 try:
                     new_type = self._handle_type_die(die)
                     self._add_type(new_type, die.offset)
+                except PendedTypeException:
+                    # Ignore this exception and keep processing.
+                    pass
                 except (KeyError, InvalidTypeDefinition) as err:
                     LOG.debug("Error parsing DWARF types: %s", err)
 
@@ -140,38 +147,18 @@ class DwarfTypeDecoder(object):
             name = to_str_safe(die.attributes['DW_AT_name'].value)
             # DW_AT_type may not be present according to the spec.
             if 'DW_AT_type' in die.attributes:
-                type_ref = die.attributes['DW_AT_type'].value
-                if type_ref not in self._types_by_offset:
-                    self._pend_die(die, type_ref)
-                    return None
-                return self._types_by_offset[type_ref].make_typedef(name)
+                return self._get_referenced_type(die).make_typedef(name)
         elif die.tag == 'DW_TAG_volatile_type':
-            type_ref = die.attributes['DW_AT_type'].value
-            if type_ref not in self._types_by_offset:
-                self._pend_die(die, type_ref)
-                return None
-            parent_type = self._types_by_offset[type_ref]
+            parent_type = self._get_referenced_type(die)
             return parent_type.make_typedef(parent_type.name + ' volatile', DataType.Qualifiers.VOLATILE)
         elif die.tag == 'DW_TAG_const_type':
-            type_ref = die.attributes['DW_AT_type'].value
-            if type_ref not in self._types_by_offset:
-                self._pend_die(die, type_ref)
-                return None
-            parent_type = self._types_by_offset[type_ref]
+            parent_type = self._get_referenced_type(die)
             return parent_type.make_typedef(parent_type.name + ' const', DataType.Qualifiers.CONST)
         elif die.tag == 'DW_TAG_restrict_type':
-            type_ref = die.attributes['DW_AT_type'].value
-            if type_ref not in self._types_by_offset:
-                self._pend_die(die, type_ref)
-                return None
-            parent_type = self._types_by_offset[type_ref]
+            parent_type = self._get_referenced_type(die)
             return parent_type.make_typedef(parent_type.name + ' restrict', DataType.Qualifiers.RESTRICT)
         elif die.tag == 'DW_TAG_pointer_type':
-            type_ref = die.attributes['DW_AT_type'].value
-            if type_ref not in self._types_by_offset:
-                self._pend_die(die, type_ref)
-                return None
-            parent_type = self._types_by_offset[type_ref]
+            parent_type = self._get_referenced_type(die)
             if parent_type.name.endswith('*'):
                 name_star = '*'
             else:
@@ -181,43 +168,47 @@ class DwarfTypeDecoder(object):
             return self._handle_struct_type(die)
         elif die.tag == 'DW_TAG_array_type':
             return self._handle_array_type(die)
+        elif die.tag == 'DW_TAG_enumeration_type':
+            return self._handle_enum_type(die)
         
 #         elif die.tag == 'DW_TAG_union_type':
 #         elif die.tag == 'DW_TAG_subroutine_type':
 
-    def _handle_struct_type(self, die):
-        # If DW_AT_declaration is set, then this is just a forward declaration that we can ignore.
-        if 'DW_AT_declaration' in die.attributes:
-            return None
-        # The struct may be anonymous.
+    def _get_referenced_type(self, die, die_to_pend=None):
+        if die_to_pend is None:
+            die_to_pend = die
+        type_ref = die.attributes['DW_AT_type'].value
+        if type_ref not in self._types_by_offset:
+            self._pend_die(die_to_pend, type_ref)
+            raise PendedTypeException()
+        return self._types_by_offset[type_ref]
+
+    def _get_optional_name(self, die):
         if 'DW_AT_name' in die.attributes:
             name = to_str_safe(die.attributes['DW_AT_name'].value)
         else:
             name = "__anonymous${}".format(self._anon_count)
             self._anon_count += 1
-        struct_type = StructType(name)
+        return name
+    
+    def _handle_struct_type(self, die):
+        # If DW_AT_declaration is set, then this is just a forward declaration that we can ignore.
+        if 'DW_AT_declaration' in die.attributes:
+            return None
+        # The struct may be anonymous.
+        name = self._get_optional_name(die)
+        byte_size = die.attributes['DW_AT_byte_size'].value
+        struct_type = StructType(name, byte_size)
         for child in die.iter_children():
             if child.tag == 'DW_TAG_member':
-                type_ref = child.attributes['DW_AT_type'].value
-                if type_ref not in self._types_by_offset:
-                    self._pend_die(die, type_ref)
-                    return None
-                member_type = self._types_by_offset[type_ref]
-                if 'DW_AT_name' in child.attributes:
-                    name = to_str_safe(child.attributes['DW_AT_name'].value)
-                else:
-                    name = "__anonymous${}".format(self._anon_count)
-                    self._anon_count += 1
+                member_type = self._get_referenced_type(child, die)
+                name = self._get_optional_name(child)
                 offset = child.attributes['DW_AT_data_member_location'].value
                 struct_type.add_member(name, offset, member_type)
         return struct_type
 
     def _handle_array_type(self, die):
-        type_ref = die.attributes['DW_AT_type'].value
-        if type_ref not in self._types_by_offset:
-            self._pend_die(die, type_ref)
-            return None
-        element_type = self._types_by_offset[type_ref]
+        element_type = self._get_referenced_type(die)
         count = None
         # The children represent dimensions. We only support 1 for now.
         for child in die.iter_children():
@@ -233,6 +224,17 @@ class DwarfTypeDecoder(object):
         if count is None:
             raise InvalidTypeDefinition("array type with no known dimension")
         return ArrayType(element_type.name + '[]', element_type, count)
+    
+    def _handle_enum_type(self, die):
+        name = self._get_optional_name(die)
+        byte_size = die.attributes['DW_AT_byte_size'].value
+        enum_type = self._get_referenced_type(die)
+        enum = EnumerationType(name, byte_size, enum_type)
+        for child in die.iter_children():
+            name = to_str_safe(child.attributes['DW_AT_name'].value)
+            value = child.attributes['DW_AT_const_value'].value
+            enum.add_enumerator(name, value)
+        return enum
             
         
 

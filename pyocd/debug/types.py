@@ -222,8 +222,8 @@ class ArrayType(DataType):
 StructMember = namedtuple("StructMember", ["name", "offset", "type"])
 
 class StructType(DataType):
-    def __init__(self, name):
-        super(StructType, self).__init__(name)
+    def __init__(self, name, byte_size):
+        super(StructType, self).__init__(name, byte_size=byte_size)
         self._members = OrderedDict()
     
     @property
@@ -242,10 +242,35 @@ class StructType(DataType):
         for _, info in self.members.items():
             members_info += "{}@{:#x}: {}\n".format(info.name, info.offset, repr(info.type))
         return self._get_repr("members=[" + members_info + "]")
+
+EnumMember = namedtuple("EnumMember", ["name", "value"])
     
 class EnumerationType(DataType):
-    def __init__(self, name):
-        super(EnumerationType, self).__init__(name)
+    def __init__(self, name, byte_size, enum_type):
+        super(EnumerationType, self).__init__(name, byte_size=byte_size)
+        self._enum_type = enum_type
+        self._enumerators = OrderedDict()
+    
+    @property
+    def enum_type(self):
+        return self._enum_type
+    
+    @property
+    def enumerators(self):
+        return self._enumerators
+    
+    def add_enumerator(self, name, value):
+        """! @brief Add a new enumerator to the enum.
+        
+        Enumerators retain their declaration order.
+        """
+        self._enumerators[name] = EnumMember(name, value)
+    
+    def __repr__(self):
+        members_info = ""
+        for _, info in self.enumerators.items():
+            members_info += "{}={}, ".format(info.name, info.value)
+        return self._get_repr("type=" + repr(self.enum_type) + " members=[" + members_info + "]")
 
 
 

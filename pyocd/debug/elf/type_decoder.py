@@ -25,11 +25,14 @@ from elftools.dwarf import constants
 
 from ..types import (
     InvalidTypeDefinition,
+    SourceLocation,
     DataType,
+    VOID_TYPE,
     ScalarType,
     PointerType,
     ArrayType,
     StructType,
+    UnionType,
     EnumerationType,
     )
 from ...core import exceptions
@@ -82,6 +85,7 @@ class DwarfTypeDecoder(object):
         self._elffile = elf
         self._dwarfinfo = dwarfinfo
         self._anon_count = 0
+        self._current_lineprog = None
         self._pending_types = {}
         self._types = {}
         self._types_by_offset = {}
@@ -98,6 +102,8 @@ class DwarfTypeDecoder(object):
             top_die = cu.get_top_DIE()
             assert top_die.tag in ('DW_TAG_compile_unit', 'DW_TAG_partial_unit')
             
+            self._current_lineprog = self._dwarfinfo.line_program_for_CU(cu)
+            
             name = os.path.basename(to_str_safe(top_die.attributes['DW_AT_name'].value))
             LOG.debug("---- CU: %s", name)
             
@@ -109,7 +115,7 @@ class DwarfTypeDecoder(object):
                     # Ignore this exception and keep processing.
                     pass
                 except (KeyError, InvalidTypeDefinition) as err:
-                    LOG.debug("Error parsing DWARF types: %s", err)
+                    LOG.debug("Error parsing DWARF types: %s ; die=%s", err, die, exc_info=True)
 
     def _add_type(self, new_type, offset):
         if new_type is None:
@@ -147,32 +153,61 @@ class DwarfTypeDecoder(object):
             name = to_str_safe(die.attributes['DW_AT_name'].value)
             # DW_AT_type may not be present according to the spec.
             if 'DW_AT_type' in die.attributes:
-                return self._get_referenced_type(die).make_typedef(name)
+                return self._get_referenced_type(die).make_typedef(name, loc=self._get_source_loc(die))
         elif die.tag == 'DW_TAG_volatile_type':
             parent_type = self._get_referenced_type(die)
-            return parent_type.make_typedef(parent_type.name + ' volatile', DataType.Qualifiers.VOLATILE)
+            return parent_type.make_typedef(parent_type.name + ' volatile', DataType.Qualifiers.VOLATILE, loc=self._get_source_loc(die))
         elif die.tag == 'DW_TAG_const_type':
             parent_type = self._get_referenced_type(die)
-            return parent_type.make_typedef(parent_type.name + ' const', DataType.Qualifiers.CONST)
+            return parent_type.make_typedef(parent_type.name + ' const', DataType.Qualifiers.CONST, loc=self._get_source_loc(die))
         elif die.tag == 'DW_TAG_restrict_type':
             parent_type = self._get_referenced_type(die)
-            return parent_type.make_typedef(parent_type.name + ' restrict', DataType.Qualifiers.RESTRICT)
+            return parent_type.make_typedef(parent_type.name + ' restrict', DataType.Qualifiers.RESTRICT, loc=self._get_source_loc(die))
         elif die.tag == 'DW_TAG_pointer_type':
-            parent_type = self._get_referenced_type(die)
+            if 'DW_AT_type' not in die.attributes:
+                parent_type = VOID_TYPE
+            else:
+                parent_type = self._get_referenced_type(die)
             if parent_type.name.endswith('*'):
                 name_star = '*'
             else:
                 name_star = ' *'
-            return PointerType(parent_type.name + name_star, parent_type)
+            return PointerType(parent_type.name + name_star, parent_type, loc=self._get_source_loc(die))
         elif die.tag == 'DW_TAG_structure_type':
-            return self._handle_struct_type(die)
+            return self._handle_struct_type(die, False)
+        elif die.tag == 'DW_TAG_union_type':
+            return self._handle_struct_type(die, True)
         elif die.tag == 'DW_TAG_array_type':
             return self._handle_array_type(die)
         elif die.tag == 'DW_TAG_enumeration_type':
             return self._handle_enum_type(die)
         
-#         elif die.tag == 'DW_TAG_union_type':
 #         elif die.tag == 'DW_TAG_subroutine_type':
+
+    def _get_source_loc(self, die):
+        if 'DW_AT_decl_file' not in die.attributes:
+            return None
+        filenum = die.attributes['DW_AT_decl_file'].value
+        # A value of 0 indicates no file.
+        if filenum == 0:
+            return None
+        try:
+            # The file and dir indices are base-1, with 0 meaning invalid.
+            file_entry = self._current_lineprog.header['file_entry'][filenum - 1]
+            dirnum = file_entry['dir_index']
+            if dirnum != 0:
+                dirname = to_str_safe(self._current_lineprog.header['include_directory'][dirnum - 1])
+            else:
+                dirname = ""
+        except IndexError:
+            LOG.debug("invalid DW_AT_decl_file (%d)", filenum)
+            return None
+        if 'DW_AT_decl_line' in die.attributes:
+            line = die.attributes['DW_AT_decl_line'].value
+        else:
+            line = 0
+        
+        return SourceLocation(to_str_safe(file_entry['name']), dirname, line)
 
     def _get_referenced_type(self, die, die_to_pend=None):
         if die_to_pend is None:
@@ -191,20 +226,27 @@ class DwarfTypeDecoder(object):
             self._anon_count += 1
         return name
     
-    def _handle_struct_type(self, die):
+    def _handle_struct_type(self, die, is_union):
         # If DW_AT_declaration is set, then this is just a forward declaration that we can ignore.
         if 'DW_AT_declaration' in die.attributes:
             return None
         # The struct may be anonymous.
         name = self._get_optional_name(die)
         byte_size = die.attributes['DW_AT_byte_size'].value
-        struct_type = StructType(name, byte_size)
+        if is_union:
+            klass = UnionType
+        else:
+            klass = StructType
+        struct_type = klass(name, byte_size, loc=self._get_source_loc(die))
         for child in die.iter_children():
             if child.tag == 'DW_TAG_member':
                 member_type = self._get_referenced_type(child, die)
                 name = self._get_optional_name(child)
-                offset = child.attributes['DW_AT_data_member_location'].value
-                struct_type.add_member(name, offset, member_type)
+                if is_union:
+                    struct_type.add_member(name, member_type)
+                else:
+                    offset = child.attributes['DW_AT_data_member_location'].value
+                    struct_type.add_member(name, offset, member_type)
         return struct_type
 
     def _handle_array_type(self, die):
@@ -218,18 +260,14 @@ class DwarfTypeDecoder(object):
                     count = child.attributes['DW_AT_upper_bound'].value + 1
                 elif 'DW_TAG_count' in child.attributes:
                     count = child.attributes['DW_TAG_count'].value
-                else:
-                    raise InvalidTypeDefinition("array type with unsupported dimension")
                 break
-        if count is None:
-            raise InvalidTypeDefinition("array type with no known dimension")
-        return ArrayType(element_type.name + '[]', element_type, count)
+        return ArrayType(element_type.name + '[]', element_type, count, loc=self._get_source_loc(die))
     
     def _handle_enum_type(self, die):
         name = self._get_optional_name(die)
         byte_size = die.attributes['DW_AT_byte_size'].value
         enum_type = self._get_referenced_type(die)
-        enum = EnumerationType(name, byte_size, enum_type)
+        enum = EnumerationType(name, byte_size, enum_type, loc=self._get_source_loc(die))
         for child in die.iter_children():
             name = to_str_safe(child.attributes['DW_AT_name'].value)
             value = child.attributes['DW_AT_const_value'].value

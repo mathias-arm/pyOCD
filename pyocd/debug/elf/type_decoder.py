@@ -23,7 +23,7 @@ from elftools.elf.elffile import ELFFile
 from elftools.dwarf.dwarfinfo import DWARFInfo
 from elftools.dwarf import constants
 
-from ..types import (
+from ..data_types import (
     InvalidTypeDefinition,
     SourceLocation,
     DataType,
@@ -34,6 +34,8 @@ from ..types import (
     StructType,
     UnionType,
     EnumerationType,
+    FunctionType,
+    Variable,
     )
 from ...core import exceptions
 from ...utility.compatibility import to_str_safe
@@ -72,7 +74,7 @@ SCALAR_FORMAT_MAP = {
         },
     }
 
-class PendedTypeException(Exception):
+class PendedDieException(Exception):
     """! @brief Exception used to skip to next DIE."""
     pass
 
@@ -86,15 +88,26 @@ class DwarfTypeDecoder(object):
         self._dwarfinfo = dwarfinfo
         self._anon_count = 0
         self._current_lineprog = None
-        self._pending_types = {}
+        self._pending_dies = {}
+        self._global_decls_by_offset = {}
         self._types = {}
         self._types_by_offset = {}
+        self._globals = {}
+        self._subprograms = {}
         
         self._build_types()
     
     @property
     def types(self):
         return self._types
+    
+    @property
+    def globals(self):
+        return self._globals
+    
+    @property
+    def subprograms(self):
+        return self._subprograms
 
     def _build_types(self):
         for cu in self._dwarfinfo.iter_CUs():
@@ -109,9 +122,9 @@ class DwarfTypeDecoder(object):
             
             for die in top_die.iter_children():
                 try:
-                    new_type = self._handle_type_die(die)
+                    new_type = self._handle_die(die)
                     self._add_type(new_type, die.offset)
-                except PendedTypeException:
+                except PendedDieException:
                     # Ignore this exception and keep processing.
                     pass
                 except (KeyError, InvalidTypeDefinition) as err:
@@ -124,19 +137,20 @@ class DwarfTypeDecoder(object):
         self._types[new_type.name] = new_type
         self._types_by_offset[offset] = new_type
             
-        if offset in self._pending_types:
-            for pending_die in self._pending_types[offset]:
-                new_type = self._handle_type_die(pending_die)
+        if offset in self._pending_dies:
+            for pending_die in self._pending_dies[offset]:
+                new_type = self._handle_die(pending_die)
                 self._add_type(new_type, pending_die.offset)
-            del self._pending_types[offset]
+            del self._pending_dies[offset]
     
     def _pend_die(self, die, offset):
-        if offset in self._pending_types:
-            self._pending_types[offset].append(die)
+        if offset in self._pending_dies:
+            self._pending_dies[offset].append(die)
         else:
-            self._pending_types[offset] = [die]
+            self._pending_dies[offset] = [die]
 
-    def _handle_type_die(self, die):
+    def _handle_die(self, die):
+        # --- types ---
         if die.tag == 'DW_TAG_base_type':
             name = to_str_safe(die.attributes['DW_AT_name'].value)
             encoding = die.attributes['DW_AT_encoding'].value
@@ -181,9 +195,33 @@ class DwarfTypeDecoder(object):
             return self._handle_array_type(die)
         elif die.tag == 'DW_TAG_enumeration_type':
             return self._handle_enum_type(die)
+        elif die.tag == 'DW_TAG_subroutine_type':
+            return self._handle_subroutine_type(die)
         
-#         elif die.tag == 'DW_TAG_subroutine_type':
-
+        # --- global variables
+        elif die.tag == 'DW_TAG_variable':
+            if 'DW_AT_declaration' in die.attributes:
+                self._global_decls_by_offset[die.offset] = die
+            else:
+                if 'DW_AT_specification' in die.attributes:
+                    offset = die.attributes['DW_AT_specification'].value
+                    try:
+                        decl = self._global_decls_by_offset[offset]
+                    except KeyError:
+                        self._pend_die(die, offset)
+                        raise PendedDieException()
+                    name = to_str_safe(decl.attributes['DW_AT_name'].value)
+                else:
+                    name = to_str_safe(die.attributes['DW_AT_name'].value)
+                var_type = self._get_referenced_type(die)
+                addr = die.attributes['DW_AT_location'].value
+                loc = self._get_source_loc(die)
+                self._globals[name] = Variable(name, var_type, addr, loc)
+        
+        # --- subprograms
+        elif die.tag == 'DW_TAG_subprogram':
+            pass
+            
     def _get_source_loc(self, die):
         if 'DW_AT_decl_file' not in die.attributes:
             return None
@@ -229,7 +267,8 @@ class DwarfTypeDecoder(object):
     def _handle_struct_type(self, die, is_union):
         # If DW_AT_declaration is set, then this is just a forward declaration that we can ignore.
         if 'DW_AT_declaration' in die.attributes:
-            return None
+            name = self._get_optional_name(die)
+            return StructType(name, byte_size=0, undefined=True)
         # The struct may be anonymous.
         name = self._get_optional_name(die)
         byte_size = die.attributes['DW_AT_byte_size'].value
@@ -273,6 +312,21 @@ class DwarfTypeDecoder(object):
             value = child.attributes['DW_AT_const_value'].value
             enum.add_enumerator(name, value)
         return enum
-            
+
+    def _handle_subroutine_type(self, die):
+        name = self._get_optional_name(die)
+        if 'DW_AT_type' in die.attributes:
+            return_type = self._get_referenced_type(die)
+        else:
+            return_type = None
+        fn_type = FunctionType(name, return_type, loc=self._get_source_loc(die))
+        for child in die.iter_children():
+            if child.tag == 'DW_TAG_formal_parameter':
+                if 'DW_AT_name' in child.attributes:
+                    name = self._get_optional_name(die)
+                else:
+                    name = None
+                param_type = self._get_referenced_type(child)
+                fn_type.add_parameter(name, param_type)
         
 

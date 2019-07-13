@@ -52,7 +52,7 @@ class DataType(object):
         VOLATILE = 0x02
         RESTRICT = 0x04
     
-    def __init__(self, name, byte_size=0, bit_size=0, bit_offset=0, loc=None):
+    def __init__(self, name, byte_size=0, bit_size=0, bit_offset=0, loc=None, undefined=False):
         """! @brief Constructor."""
         self._name = name
         self._byte_size = byte_size
@@ -60,6 +60,7 @@ class DataType(object):
         self._bit_offset = bit_offset
         self._parent = None
         self._qualifiers = 0
+        self._is_undefined = undefined
         self._source_loc = loc
     
     @property
@@ -87,6 +88,10 @@ class DataType(object):
         return self._qualifiers
     
     @property
+    def is_undefined(self):
+        return self._is_undefined
+    
+    @property
     def is_const(self):
         return (self._qualifiers & self.Qualifiers.CONST) != 0
     
@@ -99,7 +104,7 @@ class DataType(object):
         return (self._qualifiers & self.Qualifiers.RESTRICT) != 0
     
     @property
-    def location(self):
+    def source_location(self):
         """! @brief Returns a @ref pyocd.debug.types.SourceLocation "SourceLocation" object."""
         return self._source_loc
     
@@ -151,6 +156,7 @@ class DataType(object):
         return self._get_repr()
 
 class VoidType(DataType):
+    """! @brief The void type in C."""
     def __init__(self):
         super(VoidType, self).__init__("void")
 
@@ -175,8 +181,8 @@ class ScalarType(DataType):
         INT = 2
         FLOAT = 3
     
-    def __init__(self, name, fmt, byte_size, loc=None):
-        super(ScalarType, self).__init__(name, byte_size=byte_size, loc=loc)
+    def __init__(self, name, fmt, byte_size, **kwargs):
+        super(ScalarType, self).__init__(name, byte_size=byte_size, **kwargs)
         self._format = "<" + fmt # Force little-endian (for now, at least).
         if fmt == '?':
             self._form = self.Form.BOOL
@@ -217,8 +223,8 @@ class PointerType(DataType):
     or later, we'll have to correct this assumption.
     """
     
-    def __init__(self, name, object_type, loc=None):
-        super(PointerType, self).__init__(name, byte_size=4, loc=loc)
+    def __init__(self, name, object_type, **kwargs):
+        super(PointerType, self).__init__(name, byte_size=4, **kwargs)
         self._object_type = object_type
     
     @property
@@ -245,8 +251,8 @@ class ArrayType(DataType):
     object of the underlying type.
     """
 
-    def __init__(self, name, element_type, length, loc=None):
-        super(ArrayType, self).__init__(name, byte_size=element_type.byte_size * (length or 1), loc=loc)
+    def __init__(self, name, element_type, length, **kwargs):
+        super(ArrayType, self).__init__(name, byte_size=element_type.byte_size * (length or 1), **kwargs)
         self._element_type = element_type
         self._length = length
     
@@ -285,8 +291,8 @@ StructMember = namedtuple("StructMember", ["name", "offset", "type"])
 class StructType(DataType):
     """! @brief Structure type containing named members."""
     
-    def __init__(self, name, byte_size, loc=None):
-        super(StructType, self).__init__(name, byte_size=byte_size, loc=loc)
+    def __init__(self, name, byte_size, **kwargs):
+        super(StructType, self).__init__(name, byte_size=byte_size, **kwargs)
         self._members = OrderedDict()
         self._members_by_offset = OrderedDict()
     
@@ -353,8 +359,8 @@ class UnionType(StructType):
     is no (easy) way to know which member is active at any one point in time.
     """
     
-    def __init__(self, name, byte_size, loc=None):
-        super(UnionType, self).__init__(name, byte_size=byte_size, loc=loc)
+    def __init__(self, name, byte_size, **kwargs):
+        super(UnionType, self).__init__(name, byte_size=byte_size, **kwargs)
     
     def add_member(self, name, member_type):
         """! @brief Add a new member to the union."""
@@ -375,14 +381,13 @@ class UnionType(StructType):
             members_info += "{}: {}\n".format(info.name, repr(info.type))
         return self._get_repr("members=[" + members_info + "]")
     
-
 EnumMember = namedtuple("EnumMember", ["name", "value"])
     
 class EnumerationType(DataType):
     """! @brief Enumeration type."""
 
-    def __init__(self, name, byte_size, enum_type, loc=None):
-        super(EnumerationType, self).__init__(name, byte_size=byte_size, loc=loc)
+    def __init__(self, name, byte_size, enum_type, **kwargs):
+        super(EnumerationType, self).__init__(name, byte_size=byte_size, **kwargs)
         self._enum_type = enum_type
         self._enumerators = OrderedDict()
         self._enumerators_by_value = OrderedDict()
@@ -423,6 +428,62 @@ class EnumerationType(DataType):
             members_info += "{}={}, ".format(info.name, info.value)
         return self._get_repr("type=" + repr(self.enum_type) + " members=[" + members_info + "]")
 
+FormalParameter = namedtuple("FormalParameter", ["name", "type", "is_artificial"])
+    
+class FunctionType(DataType):
+    """! @brief Function or method type."""
 
+    def __init__(self, name, return_type, **kwargs):
+        super(FunctionType, self).__init__(name, **kwargs)
+        self._return_type = return_type
+        self._parameters = []
+
+    @property
+    def return_type(self):
+        return self._return_type
+    
+    @property
+    def parameters(self):
+        return self._parameters
+    
+    def add_parameter(self, name, type, is_artificial=False):
+        self._parameters.append(FormalParameter(name, type, is_artificial))
+    
+    def __repr__(self):
+        params_info = ""
+        for _, info in self.parameters.items():
+            params_info += "{}={}, ".format(info.name, info.type)
+        return self._get_repr("return=" + repr(self.return_type) + " params=[" + params_info + "]")
+
+class Variable(object):
+    """! @brief Information about a program variable."""
+    
+    def __init__(self, name, data_type, addr, loc=None):
+        self._name = name
+        self._type = data_type
+        self._addr = addr
+        self._source_loc = loc
+    
+    @property
+    def name(self):
+        return self._name
+    
+    @property
+    def data_type(self):
+        return self._type
+    
+    @property
+    def addr(self):
+        return self._addr
+    
+    @property
+    def source_location(self):
+        """! @brief Returns a @ref pyocd.debug.types.SourceLocation "SourceLocation" object."""
+        return self._source_loc
+    
+    def __repr__(self):
+        return "<{}@{:#10x} name={} typename={} addr={}>".format(
+            self.__class__.__name__, id(self), self.name, self.data_type.name, self.addr)
+    
 
 

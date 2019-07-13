@@ -74,8 +74,8 @@ SCALAR_FORMAT_MAP = {
         },
     }
 
-class DwarfTypeDecoder(object):
-    """! @brief Builds a data type hierarchy from DWARF debug info."""
+class DwarfDieDecoder(object):
+    """! @brief Extracts definitions from DWARF debug info."""
     
     def __init__(self, elf, dwarfinfo):
         assert isinstance(elf, ELFFile)
@@ -147,97 +147,10 @@ class DwarfTypeDecoder(object):
         self._types_by_offset[offset] = new_type
 
     def _handle_die(self, die):
-        # --- types ---
-        if die.tag == 'DW_TAG_base_type':
-            name = to_str_safe(die.attributes['DW_AT_name'].value)
-            encoding = die.attributes['DW_AT_encoding'].value
-            if 'DW_AT_byte_size' in die.attributes:
-                byte_size = die.attributes['DW_AT_byte_size'].value
-                try:
-                    fmt = SCALAR_FORMAT_MAP[encoding][byte_size]
-                except KeyError:
-                    raise InvalidTypeDefinition("unsupported base type: {}, {} bytes".format(encoding, byte_size))
-                self._add_type(ScalarType(name, fmt, byte_size), die.offset)
-            else:
-                LOG.debug("Unhandled base type: %s", die)
-        elif die.tag == 'DW_TAG_typedef':
-            name = to_str_safe(die.attributes['DW_AT_name'].value)
-            # DW_AT_type may not be present according to the spec.
-            if 'DW_AT_type' in die.attributes:
-                self._add_type(self._get_referenced_type(die).make_typedef(
-                    name,
-                    loc=self._get_source_loc(die)),
-                    die.offset)
-        elif die.tag == 'DW_TAG_volatile_type':
-            parent_type = self._get_referenced_type(die)
-            self._add_type(parent_type.make_typedef(
-                parent_type.name + ' volatile',
-                DataType.Qualifiers.VOLATILE,
-                loc=self._get_source_loc(die)),
-                die.offset)
-        elif die.tag == 'DW_TAG_const_type':
-            parent_type = self._get_referenced_type(die)
-            self._add_type(parent_type.make_typedef(
-                parent_type.name + ' const',
-                DataType.Qualifiers.CONST,
-                loc=self._get_source_loc(die)),
-                die.offset)
-        elif die.tag == 'DW_TAG_restrict_type':
-            parent_type = self._get_referenced_type(die)
-            self._add_type(parent_type.make_typedef(
-                parent_type.name + ' restrict',
-                DataType.Qualifiers.RESTRICT,
-                loc=self._get_source_loc(die)),
-                die.offset)
-        elif die.tag == 'DW_TAG_pointer_type':
-            if 'DW_AT_type' not in die.attributes:
-                parent_type = VOID_TYPE
-            else:
-                parent_type = self._get_referenced_type(die)
-            if parent_type.name.endswith('*'):
-                name_star = '*'
-            else:
-                name_star = ' *'
-            self._add_type(PointerType(
-                parent_type.name + name_star,
-                parent_type,
-                loc=self._get_source_loc(die)),
-                die.offset)
-        elif die.tag == 'DW_TAG_structure_type':
-            self._handle_struct_type(die, False)
-        elif die.tag == 'DW_TAG_union_type':
-            self._handle_struct_type(die, True)
-        elif die.tag == 'DW_TAG_array_type':
-            self._handle_array_type(die)
-        elif die.tag == 'DW_TAG_enumeration_type':
-            self._handle_enum_type(die)
-        elif die.tag == 'DW_TAG_subroutine_type':
-            self._handle_subroutine_type(die)
-        
-        # --- global variables
-        elif die.tag == 'DW_TAG_variable':
-            if 'DW_AT_declaration' in die.attributes:
-                # Ignore declarations.
-                pass
-            else:
-                if 'DW_AT_specification' in die.attributes:
-                    offset = die.attributes['DW_AT_specification'].value + self._current_cu.cu_offset
-                    decl = self._dies_by_offset[offset]
-                    assert (decl.tag == 'DW_TAG_variable') and ('DW_AT_declaration' in decl.attributes)
-                    name = to_str_safe(decl.attributes['DW_AT_name'].value)
-                    var_type = self._get_referenced_type(decl)
-                else:
-                    name = to_str_safe(die.attributes['DW_AT_name'].value)
-                    var_type = self._get_referenced_type(die)
-                addr = die.attributes['DW_AT_location'].value
-                loc = self._get_source_loc(die)
-                new_var = Variable(name, var_type, addr, loc)
-                self._defs_by_offset[die.offset] = new_var
-                self._globals[name] = new_var
-        
-        # --- subprograms
-        elif die.tag == 'DW_TAG_subprogram':
-            pass
+        # Find a handler method matching the DIE's tag.
+        tag_handler_name = '_handle_' + die.tag
+        if hasattr(self, tag_handler_name):
+            getattr(self, tag_handler_name)(die)
             
     def _get_source_loc(self, die):
         if 'DW_AT_decl_file' not in die.attributes:
@@ -281,6 +194,99 @@ class DwarfTypeDecoder(object):
             self._anon_count += 1
         return name
     
+    # --- types ---
+    def _handle_DW_TAG_base_type(self, die):
+        name = to_str_safe(die.attributes['DW_AT_name'].value)
+        encoding = die.attributes['DW_AT_encoding'].value
+        if 'DW_AT_byte_size' in die.attributes:
+            byte_size = die.attributes['DW_AT_byte_size'].value
+            try:
+                fmt = SCALAR_FORMAT_MAP[encoding][byte_size]
+            except KeyError:
+                raise InvalidTypeDefinition("unsupported base type: {}, {} bytes".format(encoding, byte_size))
+            self._add_type(ScalarType(name, fmt, byte_size), die.offset)
+        else:
+            LOG.debug("Unhandled base type: %s", die)
+    
+    def _handle_DW_TAG_typedef(self, die):
+        name = to_str_safe(die.attributes['DW_AT_name'].value)
+        # DW_AT_type may not be present according to the spec.
+        if 'DW_AT_type' in die.attributes:
+            self._add_type(self._get_referenced_type(die).make_typedef(
+                name,
+                loc=self._get_source_loc(die)),
+                die.offset)
+    
+    def _handle_DW_TAG_volatile_type(self, die):
+        parent_type = self._get_referenced_type(die)
+        self._add_type(parent_type.make_typedef(
+            parent_type.name + ' volatile',
+            DataType.Qualifiers.VOLATILE,
+            loc=self._get_source_loc(die)),
+            die.offset)
+    
+    def _handle_DW_TAG_const_type(self, die):
+        parent_type = self._get_referenced_type(die)
+        self._add_type(parent_type.make_typedef(
+            parent_type.name + ' const',
+            DataType.Qualifiers.CONST,
+            loc=self._get_source_loc(die)),
+            die.offset)
+    
+    def _handle_DW_TAG_restrict_type(self, die):
+        parent_type = self._get_referenced_type(die)
+        self._add_type(parent_type.make_typedef(
+            parent_type.name + ' restrict',
+            DataType.Qualifiers.RESTRICT,
+            loc=self._get_source_loc(die)),
+            die.offset)
+    
+    def _handle_DW_TAG_pointer_type(self, die):
+        if 'DW_AT_type' not in die.attributes:
+            parent_type = VOID_TYPE
+        else:
+            parent_type = self._get_referenced_type(die)
+        if parent_type.name.endswith('*'):
+            name_star = '*'
+        else:
+            name_star = ' *'
+        self._add_type(PointerType(
+            parent_type.name + name_star,
+            parent_type,
+            loc=self._get_source_loc(die)),
+            die.offset)
+
+    # --- global variables
+    def _handle_DW_TAG_variable(self, die):
+        if 'DW_AT_declaration' in die.attributes:
+            # Ignore declarations.
+            pass
+        else:
+            if 'DW_AT_specification' in die.attributes:
+                offset = die.attributes['DW_AT_specification'].value + self._current_cu.cu_offset
+                decl = self._dies_by_offset[offset]
+                assert (decl.tag == 'DW_TAG_variable') and ('DW_AT_declaration' in decl.attributes)
+                name = to_str_safe(decl.attributes['DW_AT_name'].value)
+                var_type = self._get_referenced_type(decl)
+            else:
+                name = to_str_safe(die.attributes['DW_AT_name'].value)
+                var_type = self._get_referenced_type(die)
+            addr = die.attributes['DW_AT_location'].value
+            loc = self._get_source_loc(die)
+            new_var = Variable(name, var_type, addr, loc)
+            self._defs_by_offset[die.offset] = new_var
+            self._globals[name] = new_var
+    
+    # --- subprograms
+    def _handle_DW_TAG_subprogram(self, die):
+        pass
+    
+    def _handle_DW_TAG_structure_type(self, die):
+        self._handle_struct_type(die, False)
+
+    def _handle_DW_TAG_union_type(self, die):
+        self._handle_struct_type(die, True)
+
     def _handle_struct_type(self, die, is_union):
         # If DW_AT_declaration is set, then this is just a forward declaration that we can ignore.
         if 'DW_AT_declaration' in die.attributes:
@@ -307,7 +313,7 @@ class DwarfTypeDecoder(object):
                     struct_type.add_member(name, offset, member_type)
         return struct_type
 
-    def _handle_array_type(self, die):
+    def _handle_DW_TAG_array_type(self, die):
         element_type = self._get_referenced_type(die)
         count = None
         # The children represent dimensions. We only support 1 for now.
@@ -321,7 +327,7 @@ class DwarfTypeDecoder(object):
                 break
         self._add_type(ArrayType(element_type.name + '[]', element_type, count, loc=self._get_source_loc(die)), die.offset)
     
-    def _handle_enum_type(self, die):
+    def _handle_DW_TAG_enumeration_type(self, die):
         name = self._get_optional_name(die)
         byte_size = die.attributes['DW_AT_byte_size'].value
         enum_type = self._get_referenced_type(die)
@@ -333,7 +339,7 @@ class DwarfTypeDecoder(object):
             enum.add_enumerator(name, value)
         return enum
 
-    def _handle_subroutine_type(self, die):
+    def _handle_DW_TAG_subroutine_type(self, die):
         name = self._get_optional_name(die)
         if 'DW_AT_type' in die.attributes:
             return_type = self._get_referenced_type(die)

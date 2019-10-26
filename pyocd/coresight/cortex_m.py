@@ -960,11 +960,14 @@ class CortexM(Target, CoreSightCoreComponent):
                 if self.get_state() not in (Target.State.RESET, Target.State.RUNNING):
                     break
                 sleep(0.01)
+            else:
+                LOG.warning("Target did not finish resetting (state is %s)", self.get_state())
 
         # Make sure the thumb bit is set in XPSR in case the reset handler
-        # points to an invalid address.
+        # points to an invalid address. XPSR could be None if the target did not come out of
+        # reset (timed out above).
         xpsr = self.read_core_register('xpsr')
-        if xpsr & self.XPSR_THUMB == 0:
+        if (xpsr is not None) and (xpsr & self.XPSR_THUMB == 0):
             self.write_core_register('xpsr', xpsr | self.XPSR_THUMB)
 
         # Restore to original state.
@@ -1032,10 +1035,11 @@ class CortexM(Target, CoreSightCoreComponent):
         regIndex = register_name_to_index(reg)
         regValue = self.read_core_register_raw(regIndex)
         # Convert int to float.
-        if is_single_float_register(regIndex):
-            regValue = conversion.u32_to_float32(regValue)
-        elif is_double_float_register(regIndex):
-            regValue = conversion.u64_to_float64(regValue)
+        if regValue is not None:
+            if is_single_float_register(regIndex):
+                regValue = conversion.u32_to_float32(regValue)
+            elif is_double_float_register(regIndex):
+                regValue = conversion.u64_to_float64(regValue)
         return regValue
 
     def read_core_register_raw(self, reg):
@@ -1053,6 +1057,8 @@ class CortexM(Target, CoreSightCoreComponent):
         Read core registers in reg_list and return a list of values.
         If any register in reg_list is a string, find the number
         associated to this register in the lookup table CORE_REGISTER.
+        
+        If a register fails to be read, a value of None will be returned.
         """
         # convert to index only
         reg_list = [register_name_to_index(reg) for reg in reg_list]
@@ -1064,6 +1070,18 @@ class CortexM(Target, CoreSightCoreComponent):
             elif is_fpu_register(reg) and (not self.has_fpu):
                 raise ValueError("attempt to read FPU register without FPU")
 
+        # Must be halted to read core registers. If the core is not in Debug state, DCRSR is
+        # inaccessible and DHCSR.S_REGRDY is UNKNOWN. The only exception is the PC, where we
+        # can make use of the DWT PCSR register to sample PC.
+        if not self.is_halted():
+            reg_vals = []
+            for reg in reg_list:
+                if (reg == CORE_REGISTER['pc']) and (self.dwt is not None):
+                    reg_vals.append(self.dwt.pcsr)
+                else:
+                    reg_vals.append(None)
+            return reg_vals
+        
         # Handle doubles.
         doubles = [reg for reg in reg_list if is_double_float_register(reg)]
         hasDoubles = len(doubles) > 0
@@ -1093,7 +1111,7 @@ class CortexM(Target, CoreSightCoreComponent):
 
             # Technically, we need to poll S_REGRDY in DHCSR here before reading DCRDR. But
             # we're running so slow compared to the target that it's not necessary.
-            # Read it and assert that S_REGRDY is set
+            # Read it and check that S_REGRDY is set below.
 
             dhcsr_cb = self.read_memory(CortexM.DHCSR, now=False)
             reg_cb = self.read_memory(CortexM.DCRDR, now=False)
@@ -1104,8 +1122,9 @@ class CortexM(Target, CoreSightCoreComponent):
         reg_vals = []
         for reg, reg_cb, dhcsr_cb in zip(reg_list, reg_cb_list, dhcsr_cb_list):
             dhcsr_val = dhcsr_cb()
-            assert dhcsr_val & CortexM.S_REGRDY
             val = reg_cb()
+            if (dhcsr_val & CortexM.S_REGRDY) == 0:
+                val = None
 
             # Special handling for registers that are combined into a single DCRSR number.
             if is_cfbp_subregister(reg):
@@ -1171,6 +1190,11 @@ class CortexM(Target, CoreSightCoreComponent):
                 raise ValueError("unknown reg: %d" % reg)
             elif is_fpu_register(reg) and (not self.has_fpu):
                 raise ValueError("attempt to write FPU register without FPU")
+
+        # Must be halted to write core registers.
+        if not self.is_halted():
+            LOG.warning("Attempt to write core registers while core is not halted.")
+            return
 
         # Read special register if it is present in the list and
         # convert doubles to single float register writes.

@@ -187,6 +187,10 @@ class DWT(CoreSightComponent):
     @cycle_count.setter
     def cycle_count(self, value):
         self.ap.write32(self.address + self.DWT_CYCCNT, value)
+    
+    @property
+    def pcsr(self):
+        return self.ap.read32(self.address + self.DWT_PCSR)
 
 class DWTv2(DWT):
     """! @brief Data Watchpoint and Trace version 2.x

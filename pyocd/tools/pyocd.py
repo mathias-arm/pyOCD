@@ -861,7 +861,9 @@ class PyOCDCommander(object):
         reg = args[0].lower()
         if reg in coresight.cortex_m.CORE_REGISTER:
             value = self.target.read_core_register(reg)
-            if isinstance(value, six.integer_types):
+            if value is None:
+                print("%s is not accessible" % reg)
+            elif isinstance(value, six.integer_types):
                 print("%s = 0x%08x (%d)" % (reg, value, value))
             elif type(value) is float:
                 print("%s = %g" % (reg, value))
@@ -1941,6 +1943,8 @@ Prefix line with ! to execute a shell command.""")
         value = None
         if arg.lower() in coresight.cortex_m.CORE_REGISTER:
             value = self.target.read_core_register(arg.lower())
+            if value is None:
+                raise ToolError("register %s is not accessible" % arg.lower())
             print("%s = 0x%08x" % (arg.lower(), value))
         else:
             subargs = arg.lower().split('.')
@@ -1977,7 +1981,11 @@ Prefix line with ! to execute a shell command.""")
 
         for i, reg in enumerate(regs):
             regValue = self.target.read_core_register(reg)
-            print("{:>8} {:#010x} ".format(reg + ':', regValue), end=' ')
+            if regValue is None:
+                regValue = "n/a"
+            else:
+                regValue = "0x%08x" % regValue
+            print("{:>8} {} ".format(reg + ':', regValue), end=' ')
             if i % 3 == 2:
                 print()
 

@@ -38,7 +38,7 @@ setup(
         'setuptools_scm!=1.5.3,!=1.5.4',
         'setuptools_scm_git_archive',
         ],
-    description="Cortex-M debugger for Python",
+    description="Arm Cortex-M debugger for Python",
     long_description=readme,
     long_description_content_type='text/markdown',
     author="Chris Reed, Martin Kojtal, Russ Butler",
@@ -48,6 +48,7 @@ setup(
     # Allow installation on 2.7.9+, and 3.4+ even though we officially only support 3.6+.
     python_requires=">=2.7.9, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
     install_requires = [
+        'capstone>=4.0<5.0',
         'cmsis-pack-manager>=0.2.7',
         'colorama',
         'enum34>=1.0,<2.0;python_version<"3.4"',
@@ -74,9 +75,6 @@ setup(
         "Topic :: Software Development :: Debuggers",
         "Topic :: Software Development :: Embedded Systems",
     ],
-    extras_require={
-        'dissassembler': ['capstone'],
-    },
     entry_points={
         'console_scripts': [
             'pyocd = pyocd.__main__:main',

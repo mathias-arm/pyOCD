@@ -20,7 +20,7 @@ import logging
 from .mockcore import MockCore
 
 from pyocd.core import memory_map
-from pyocd.coresight.cortex_m import CORE_REGISTER
+from pyocd.coresight.core_registers import CORE_REGISTER
 from pyocd.utility import conversion
 from pyocd.utility import mask
 

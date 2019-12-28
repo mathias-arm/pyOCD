@@ -19,12 +19,10 @@ import logging
 
 from pyocd.cache.register import RegisterCache
 from pyocd.debug.context import DebugContext
-from pyocd.coresight.cortex_m import (
-    CortexM,
+from pyocd.coresight.cortex_m import CortexM
+from pyocd.coresight.core_registers import (
     CORE_REGISTER,
-    register_name_to_index,
-    is_psr_subregister,
-    sysm_to_psr_mask
+    CoreRegisterInfo,
 )
 from pyocd.core import memory_map
 from pyocd.utility import conversion
@@ -52,9 +50,9 @@ def get_modifier(r):
     return REG_MODIFIER.get(r, 7)
 
 def get_expected_reg_value(r):
-    i = register_name_to_index(r)
-    if is_psr_subregister(i):
-        return 0x55555555 & sysm_to_psr_mask(i)
+    i = CoreRegisterInfo.register_name_to_index(r)
+    if CoreRegisterInfo.get(i).is_psr_subregister:
+        return 0x55555555 & CoreRegisterInfo.get(i).psr_mask
     if i < 0:
         i += 100
     return i + 1
@@ -187,21 +185,21 @@ class TestRegisterCache:
             ]
 
     def test_invalid_reg_r(self, regcache):
-        with pytest.raises(ValueError):
+        with pytest.raises(KeyError):
             regcache.read_core_registers_raw([132423])
 
     def test_invalid_reg_w(self, regcache):
-        with pytest.raises(ValueError):
+        with pytest.raises(KeyError):
             regcache.write_core_registers_raw([132423], [1234])
     
     def test_invalid_fpu_reg_r(self, mockcore, regcache):
         mockcore.has_fpu = False
-        with pytest.raises(ValueError):
+        with pytest.raises(KeyError):
             regcache.read_core_registers_raw(['s1'])
     
     def test_invalid_fpu_reg_w(self, mockcore, regcache):
         mockcore.has_fpu = False
-        with pytest.raises(ValueError):
+        with pytest.raises(KeyError):
             regcache.write_core_registers_raw(['s1'], [1.234])
 
             

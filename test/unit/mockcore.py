@@ -20,12 +20,10 @@ import logging
 from pyocd.debug.cache import MemoryCache
 from pyocd.debug.context import DebugContext
 from pyocd.coresight.component import CoreSightCoreComponent
-from pyocd.coresight.cortex_m import (
+from pyocd.coresight.core_registers import (
     CORE_REGISTER,
-    register_name_to_index,
-    is_cfbp_subregister,
-    is_psr_subregister,
-    sysm_to_psr_mask
+    CoreRegisterInfo,
+    CoreRegisterGroups,
 )
 from pyocd.core import memory_map
 from pyocd.utility import conversion
@@ -49,6 +47,13 @@ class MockCore(CoreSightCoreComponent):
                         (self.ram_region, self.ram),
                         (self.ram2_region, self.ram2)]
         self.has_fpu = True
+        self.core_registers = {}
+        regs = CoreRegisterGroups.GENERAL + CoreRegisterGroups.XPSR_CONTROL_PLAIN \
+                + CoreRegisterGroups.SYSTEM_V7M_ONLY + CoreRegisterGroups.FLOAT_FPSCR \
+                + CoreRegisterGroups.FLOAT_SP + CoreRegisterGroups.FLOAT_DP
+        for reg in regs:
+            self.core_registers[reg.name] = reg
+            self.core_registers[reg.index] = reg
         self.clear_all_regs()
     
     def clear_all_regs(self):
@@ -59,15 +64,15 @@ class MockCore(CoreSightCoreComponent):
         return False
 
     def read_core_registers_raw(self, reg_list):
-        reg_list = [register_name_to_index(reg) for reg in reg_list]
+        reg_list = [CoreRegisterInfo.register_name_to_index(reg) for reg in reg_list]
         results = []
         for r in reg_list:
-            if is_cfbp_subregister(r):
+            if CoreRegisterInfo.get(r).is_cfbp_subregister:
                 v = self.regs[CORE_REGISTER['cfbp']]
                 v = (v >> ((-r - 1) * 8)) & 0xff
-            elif is_psr_subregister(r):
+            elif CoreRegisterInfo.get(r).is_psr_subregister:
                 v = self.regs[CORE_REGISTER['xpsr']]
-                v &= sysm_to_psr_mask(r)
+                v &= CoreRegisterInfo.get(r).psr_mask
             else:
                 if r not in self.regs:
                     self.regs[r] = 0
@@ -77,16 +82,16 @@ class MockCore(CoreSightCoreComponent):
         return results
 
     def write_core_registers_raw(self, reg, data):
-        reg = [register_name_to_index(r) for r in reg]
+        reg = [CoreRegisterInfo.register_name_to_index(r) for r in reg]
 #         logging.info("mockcore[%x]:write(%s, %s)", id(self), reg, data)
         for r, v in zip(reg, data):
-            if is_cfbp_subregister(r):
+            if CoreRegisterInfo.get(r).is_cfbp_subregister:
                 shift = (-r - 1) * 8
                 mask = 0xffffffff ^ (0xff << shift)
                 data = (self.regs[CORE_REGISTER['cfbp']] & mask) | ((v & 0xff) << shift)
                 self.regs[CORE_REGISTER['cfbp']] = data
-            elif is_psr_subregister(r):
-                mask = sysm_to_psr_mask(r)
+            elif CoreRegisterInfo.get(r).is_psr_subregister:
+                mask = CoreRegisterInfo.get(r).psr_mask
                 data = (self.regs[CORE_REGISTER['xpsr']] & (0xffffffff ^ mask)) | (v & mask)
                 self.regs[CORE_REGISTER['xpsr']] = data
             else:

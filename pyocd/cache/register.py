@@ -16,13 +16,9 @@
 
 import logging
 
-from ..coresight.cortex_m import (
+from ..coresight.core_registers import (
     CORE_REGISTER,
-    register_name_to_index,
-    is_fpu_register,
-    is_cfbp_subregister,
-    is_psr_subregister,
-    sysm_to_psr_mask
+    CoreRegisterInfo,
 )
 from .metrics import CacheMetrics
 
@@ -85,14 +81,17 @@ class RegisterCache(object):
 
     def _convert_and_check_registers(self, reg_list):
         # convert to index only
-        reg_list = [register_name_to_index(reg) for reg in reg_list]
+        reg_list = [CoreRegisterInfo.register_name_to_index(reg) for reg in reg_list]
 
         # Sanity check register values
         for reg in reg_list:
-            if reg not in CORE_REGISTER.values():
-                raise ValueError("unknown reg: %d" % reg)
-            elif is_fpu_register(reg) and (not self._core.has_fpu):
-                raise ValueError("attempt to read FPU register without FPU")
+            if reg not in self._core.core_registers:
+                # Invalid register, try to give useful error. An invalid name will already
+                # have raised a KeyError above.
+                if CoreRegisterInfo.get(reg).is_fpu_register and (not self.has_fpu):
+                    raise KeyError("attempt to read FPU register without FPU")
+                else:
+                    raise KeyError("register not available in this CPU")
 
         return reg_list
 
@@ -137,7 +136,7 @@ class RegisterCache(object):
             for r in self.XPSR_REGS:
                 if r == CORE_REGISTER['xpsr']:
                     continue
-                self._cache[r] = v & sysm_to_psr_mask(r)
+                self._cache[r] = v & CoreRegisterInfo.get(r).psr_mask
 
         # Build the results list in the same order as requested registers.
         results = []

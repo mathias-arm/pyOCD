@@ -18,7 +18,7 @@ from .common import (read_c_string, HandlerModeThread, EXC_RETURN_EXT_FRAME_MASK
 from ..core import exceptions
 from ..core.target import Target
 from ..debug.context import DebugContext
-from ..coresight.cortex_m import (CORE_REGISTER, register_name_to_index)
+from ..coresight.core_registers import (CORE_REGISTER, CoreRegisterInfo)
 import logging
 
 # Create a logger for this module.
@@ -136,7 +136,7 @@ class RTXThreadContext(DebugContext):
         self._has_fpu = self.core.has_fpu
 
     def read_core_registers_raw(self, reg_list):
-        reg_list = [register_name_to_index(reg) for reg in reg_list]
+        reg_list = [CoreRegisterInfo.register_name_to_index(reg) for reg in reg_list]
         reg_vals = []
 
         isCurrent = self._thread.is_current

@@ -510,7 +510,7 @@ class PyOCDConsole(object):
             args = args[1:]
 
             # Handle register name as command.
-            if cmd in coresight.cortex_m.CORE_REGISTER:
+            if cmd in coresight.core_registers.CORE_REGISTER:
                 self.tool.handle_reg([cmd])
                 return
 
@@ -859,7 +859,7 @@ class PyOCDCommander(object):
             show_fields = False
 
         reg = args[0].lower()
-        if reg in coresight.cortex_m.CORE_REGISTER:
+        if reg in coresight.core_registers.CORE_REGISTER:
             value = self.target.read_core_register(reg)
             if isinstance(value, six.integer_types):
                 print("%s = 0x%08x (%d)" % (reg, value, value))
@@ -890,7 +890,7 @@ class PyOCDCommander(object):
             raise ToolError("No value specified")
 
         reg = args[0].lower()
-        if reg in coresight.cortex_m.CORE_REGISTER:
+        if reg in coresight.core_registers.CORE_REGISTER:
             if (reg.startswith('s') and reg != 'sp') or reg.startswith('d'):
                 value = float(args[1])
             else:
@@ -1939,7 +1939,7 @@ Prefix line with ! to execute a shell command.""")
                 offset = int(offset.strip(), base=0)
 
         value = None
-        if arg.lower() in coresight.cortex_m.CORE_REGISTER:
+        if arg.lower() in coresight.core_registers.CORE_REGISTER:
             value = self.target.read_core_register(arg.lower())
             print("%s = 0x%08x" % (arg.lower(), value))
         else:

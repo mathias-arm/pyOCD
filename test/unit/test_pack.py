@@ -31,6 +31,8 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 K64F_PACK_NAME = "NXP.MK64F12_DFP.11.0.0.pack"
 K64F_PACK_PATH = os.path.join(TEST_DATA_DIR, K64F_PACK_NAME)
 K64F_1M0_FLM = "arm/MK_P1M0.FLM"
+LPC55_PACK_NAME = "NXP.LPC55S69_DFP.12.1.0.pack"
+LPC55_PACK_PATH = os.path.join(TEST_DATA_DIR, LPC55_PACK_NAME)
 
 @pytest.fixture(scope='module')
 def pack_ref():
@@ -71,6 +73,14 @@ def k64algo(k64pack):
     flm = k64pack.get_file(K64F_1M0_FLM)
     return flash_algo.PackFlashAlgo(flm)
 
+@pytest.fixture(scope='function')
+def lpc55pack():
+    return cmsis_pack.CmsisPack(LPC55_PACK_PATH)
+
+@pytest.fixture(scope='function')
+def lpc55jbd64(lpc55pack):
+    return [d for d in lpc55pack.devices if d.part_number == "LPC55S69JBD64"].pop()
+
 # Tests for managed packs. Currently disabled as they fail on most systems.
 class Disabled_TestPack(object):
     def test_get_installed(self, pack_ref):
@@ -94,7 +104,7 @@ class Disabled_TestPack(object):
         assert flash.start == 0 and flash.length == 0x100000
         assert flash.sector_size == 0x1000
         
-class TestPack(object):
+class TestK64Pack(object):
     def test_devices(self, k64pack):
         devs = k64pack.devices
         pns = [x.part_number for x in devs]
@@ -133,7 +143,7 @@ class TestPack(object):
         assert flash.start == 0 and flash.length == 1 * 1024 * 1024
         assert flash.sector_size == 4096
     
-class TestFLM(object):
+class TestK64FLM(object):
     def test_algo(self, k64algo):
         i = k64algo.flash_info
 #         print(i)
@@ -157,4 +167,11 @@ class TestFLM(object):
         assert d['pc_eraseAll'] == ram.start + STACK_SIZE + 0x95
         assert d['pc_erase_sector'] == ram.start + STACK_SIZE + 0xcb
         assert d['pc_program_page'] == ram.start + STACK_SIZE + 0xdf
+
+class TestLPC55Pack(object):
+    def test_pack_name(self, lpc55pack):
+        assert lpc55pack.pack_name == "LPC55S69_DFP"
+    
+    def test_sequences(self, lpc55jbd64):
+        pass
         

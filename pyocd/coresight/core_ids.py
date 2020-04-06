@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import Enum
+
 # pylint: disable=invalid_name
 
 # CPUID PARTNO values
@@ -41,3 +43,12 @@ CORE_TYPE_NAME = {
                  ARM_CortexM33 : "Cortex-M33",
                  ARM_CortexM55 : "Cortex-M55",
                }
+
+class CoreArchitecture(Enum):
+    """! @brief CPU architectures."""
+    ARMv6M = 1
+    ARMv7M = 2
+    ARMv8M_BASE = 3
+    ARMv8M_MAIN = 4
+    
+

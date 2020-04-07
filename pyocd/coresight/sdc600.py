@@ -25,9 +25,27 @@ from ..utility.hex import dump_hex_data
 
 LOG = logging.getLogger(__name__)
 
-class UnexpectedFlagError(exceptions.Error):
+class ComPortError(exceptions.Error):
+    """! @brief Base class for SDC-600 exceptions."""
+    pass
+
+class UnexpectedFlagError(ComPortError):
     """! @brief Received an unexpected or out of order flag byte."""
     pass
+
+class LinkError(ComPortError):
+    """! @brief Received a link error flag (LERR)."""
+    pass
+
+class LinkClosedException(ComPortError):
+    """! @brief Received an unexpected or out of order flag byte."""
+    def __init__(self, phase):
+        self._phase = phase
+    
+    @property
+    def phase(self):
+        """! @brief The link phase that was closed from the other side."""
+        return self._phase
 
 class SDC600(CoreSightComponent):
     """! @brief SDC-600 component.
@@ -44,7 +62,7 @@ class SDC600(CoreSightComponent):
         PHASE2 = 2
     
     class Register:
-        """! @brief Namespace for register offset constants."""
+        """! @brief Namespace for SDC-600 register offset constants."""
         # Register offsets.
         VIDR        = 0xD00
         FIDTXR      = 0xD08
@@ -90,7 +108,7 @@ class SDC600(CoreSightComponent):
         SR_PEN_SHIFT        = (31)
     
     class Flag:
-        """! @brief Namespace with flag byte value constants."""
+        """! @brief Namespace with SDC-600 flag byte constants."""
         IDR     = 0xA0
         IDA     = 0xA1
         LPH1RA  = 0xA6
@@ -132,6 +150,7 @@ class SDC600(CoreSightComponent):
         super(SDC600, self).__init__(ap, cmpid, addr)
         self._tx_width = 0
         self._rx_width = 0
+        self._current_link_phase = None
 
     def init(self):
         """! @brief Inits the component.
@@ -157,23 +176,37 @@ class SDC600(CoreSightComponent):
             self.ap.write32(self.Register.SR, error_flags)
     
     @property
+    def is_enabled(self):
+        """! @brief Whether the SDC-600 is enabled."""
+        return self._is_enabled
+    
+    @property
     def is_reboot_request_enabled(self):
+        """! @brief Whether the Reboot Request feature is enabled in the SDC-600."""
         return (self.ap.read32(self.Register.SR) & self.Register.SR_RRDIS_MASK) == 0
+    
+    @property
+    def current_link_phase(self):
+        """! @brief Currently established link phase.
+        @return Either None or one of the SDC600.LinkPhase enums.
+        """
+        return self._current_link_phase
 
-    def _read1(self):
+    def _read1(self, to_):
         """! @brief Read a single byte.
         
-        If a NULL byte is received, it is ignored and another byte is read.
+        If a NULL byte is received, it is ignored and another byte is read. No other flag bytes
+        are processed.
+        
+        @exception TimeoutError
         """
         while True:
             # Wait until a byte is ready in the receive FIFO.
-            with Timeout(self.TRANSFER_TIMEOUT) as to_:
-                while to_.check():
-                    if (self.ap.read32(self.Register.SR) & self.Register.SR_RXF_MASK) != 0:
-                        break
-                    sleep(0.01)
-                else:
-                    raise exceptions.TimeoutError("timeout while reading from SDC-600")
+            while to_.check():
+                if (self.ap.read32(self.Register.SR) & self.Register.SR_RXF_MASK) != 0:
+                    break
+            else:
+                raise exceptions.TimeoutError("timeout while reading from SDC-600")
 
             # Read the data register and strip off NULL bytes in high bytes.
             value = self.ap.read32(self.Register.DR) & 0xFF
@@ -184,32 +217,73 @@ class SDC600(CoreSightComponent):
             
             return value
         
-    def _write1(self, value):
-        """! @brief Write one or more bytes."""
+    def _write1(self, value, to_):
+        """! @brief Write one or more bytes.
+        @exception TimeoutError
+        """
         # Wait until room is available in the transmit FIFO.
-        with Timeout(self.TRANSFER_TIMEOUT) as to_:
-            while to_.check():
-                if (self.ap.read32(self.Register.SR) & self.Register.SR_TXS_MASK) != 0:
-                    break
-                sleep(0.01)
-            else:
-                raise exceptions.TimeoutError("timeout while writing to from SDC-600")
+        while to_.check():
+            if (self.ap.read32(self.Register.SR) & self.Register.SR_TXS_MASK) != 0:
+                break
+        else:
+            raise exceptions.TimeoutError("timeout while writing to SDC-600")
 
         # Write this byte to the transmit FIFO.
         dbr_value = self.NULL_FILL | (value & 0xFF)
         self.ap.write32(self.Register.DR, dbr_value)
 
-    def _expect_flag(self, flag):
-        value = self._read1()
-        LOG.info("received: 0x%02x", value)
+    def _check_flags(self, value, to_):
+        """! @brief Handle link and error related flag bytes.
+        @param self
+        @param value Integer byte value to check.
+        @param to_ Timeout object.
+        @exception UnexpectedFlagError
+        @exception LinkClosedException
+        @exception LinkError
+        @exception TimeoutError
+        """
+        if value == self.Flag.LPH1RL:
+            LOG.debug("got LPH1RL!")
+            self._current_link_phase = None
+            raise LinkClosedException(self.LinkPhase.PHASE1)
+        elif value == self.Flag.LPH2RL:
+            LOG.debug("got LPH2RL!")
+            # Target killed the phase 2 connection. Send required reply.
+            self._current_link_phase = self.LinkPhase.PHASE1
+            self._write1(self.Flag.LPH2RL, to_)
+            raise LinkClosedException(self.LinkPhase.PHASE2)
+        elif value == self.Flag.LERR:
+            LOG.debug("got LERR!")
+            raise LinkError()
+        # Catch reserved flags.
+        elif (0xA2 <= value <= 0xA5) or (0xB0 <= value <= 0xBF):
+            raise UnexpectedFlagError("received reserved flag value ({:#04x})".format(flag))
+
+    def _expect_flag(self, flag, to_):
+        """! @brief Read a byte and compare to expected value.
+        @param self
+        @param flag Integer flag byte value to match.
+        @param to_ Timeout object.
+        @exception UnexpectedFlagError
+        @exception LinkClosedException
+        @exception TimeoutError
+        """
+        value = self._read1(to_)
         if value != flag:
+            # Check certain flags we have to handle. This will raise if a flag is handled.
+            self._check_flags(value, to_)
+            # _check_flags() did not raise, so we should .
             raise UnexpectedFlagError("got {:#04x} instead of expected {} ({:#04x})".format(
-                value, self.Flag.NAME[flag], flag))
+                        value, self.Flag.NAME[flag], flag))
         else:
-            LOG.info("got expected %s", self.Flag.NAME[value])
+            LOG.debug("got expected %s", self.Flag.NAME[value])
 
     def _stuff(self, data):
-        """! @brief Perform COM Encapsulation byte stuffing."""
+        """! @brief Perform COM Encapsulation byte stuffing.
+        @param self
+        @param data List of integers of the original data.
+        @return List of integers for the escaped version of _data_.
+        """
         result = []
         for value in data:
             # Values matching flag bytes just get copied to output.
@@ -224,7 +298,11 @@ class SDC600(CoreSightComponent):
         return result
 
     def _destuff(self, data):
-        """! @brief Remove COM Encapsulation byte stuffing."""
+        """! @brief Remove COM Encapsulation byte stuffing.
+        @param self
+        @param data List of integers. The only acceptable flag byte is ESC.
+        @return List of integers properly de-stuffed.
+        """
         result = []
         i = 0
         while i < len(data):
@@ -243,99 +321,159 @@ class SDC600(CoreSightComponent):
             i += 1
         return result
 
-    def _read_packet_data_to_end(self):
+    def _read_packet_data_to_end(self, to_):
         """! @brief Read an escaped packet from the first message byte to the end.
         @exception UnexpectedFlagError
+        @exception LinkClosedException
         @exception TimeoutError
         """
         result = []
-        while True:
-            value = self._read1()
+        while to_.check():
+            value = self._read1(to_)
             
             # Check for the packet end marker flag.
             if value == self.Flag.END:
                 break
-            elif value == self.Flag.LPH2RL:
-                # Target killed the connection in the middle of a packet. At least reply.
-                self._write1(self.Flag.LPH2RL)
-                return []
-            elif value == self.Flag.LERR:
-                # Received a link error flag.
-                return []
+            # Handle other flag bytes.
+            elif (value & self.Flag.MASK) == self.Flag.IDENTIFIER:
+                self._check_flags(value, to_)
+            # Append data bytes.
             else:
                 result.append(value)
-            
+        else:
+            raise exceptions.TimeoutError("timeout while reading from SDC-600")
+        
         return self._destuff(result)
 
-    def receive_packet(self):
-        """! @brief Read an escaped packet.
+    def receive_packet(self, timeout=TRANSFER_TIMEOUT):
+        """! @brief Read a data packet.
+        
+        Reads a packet (PDU) from the target and removes byte stuffing. The timeout for reading the
+        entire packet can be set via the _timeout_ parameter.
+        
+        As data is read from the target, special flags for link errors or to close either phase of
+        the link are handled and an appropriate exception is raised.
+        
+        The connection must be in link phase 2.
+        
+        @param self
+        @param timeout Optional timeout for reading the entire packet. If reading times out, a
+            TimeoutError exception is raised.
+        @return List of integer byte values of the de-escaped packet contents.
+        
+        @exception UnexpectedFlagError
+        @exception LinkClosedException
+        @exception TimeoutError
+        """
+        assert self._current_link_phase == self.LinkPhase.PHASE2
+        with Timeout(timeout) as to_:
+            self._expect_flag(self.Flag.START, to_)
+            return self._read_packet_data_to_end(to_)
+    
+    def send_packet(self, data, timeout=TRANSFER_TIMEOUT):
+        """! @brief Send a data packet.
+        
+        Sends the provided data to the target as a single packet (PDU), escaping bytes as necessary.
+        No data is read while the packet is sent, so if the target closes the connection it will
+        not be detected.
+        
+        The connection must be in link phase 2.
+        
+        @param self
+        @param data List of integer byte values to send. Must not be pre-escaped.
+        @param timeout Optional timeout for reading the entire packet. If reading times out, a
+            TimeoutError exception is raised.
+        
         @exception UnexpectedFlagError
         @exception TimeoutError
         """
-        self._expect_flag(self.Flag.START)
-        return self._read_packet_data_to_end()
+        assert self._current_link_phase == self.LinkPhase.PHASE2
+        with Timeout(timeout) as to_:
+            self._write1(self.Flag.START, to_)
+            for value in self._stuff(data):
+                self._write1(value, to_)
+            self._write1(self.Flag.END, to_)
     
-    def send_packet(self, data):
-        """! @brief Send an escaped packet.
-        @exception UnexpectedFlagError
-        @exception TimeoutError
-        """
-        self._write1(self.Flag.START)
-        for value in self._stuff(data):
-            self._write1(value)
-        self._write1(self.Flag.END)
-    
-    def open_link(self, phase):
+    def open_link(self, phase, timeout=TRANSFER_TIMEOUT):
         """! @brief Send the LPH1RA or LPH2RA flag.
         @exception UnexpectedFlagError
+        @exception LinkClosedException
         @exception TimeoutError
         """
-        if phase == self.LinkPhase.PHASE1:
-            # Close link phase 1 first, to put it in a known state.
-            self.close_link(self.LinkPhase.PHASE1)
-        
-            LOG.info("sending LPH1RA")
-            self._write1(self.Flag.LPH1RA)
-            self._expect_flag(self.Flag.LPH1RA)
-        elif phase == self.LinkPhase.PHASE2:
-            LOG.info("sending LPH2RA")
-            self._write1(self.Flag.LPH2RA)
-            self._expect_flag(self.Flag.LPH2RA)
+        with Timeout(timeout) as to_:
+            if phase == self.LinkPhase.PHASE1:
+                assert self._current_link_phase == None
 
-    def close_link(self, phase):
+                # Close link phase 1 first, to put it in a known state.
+                self.close_link(self.LinkPhase.PHASE1)
+        
+                LOG.debug("sending LPH1RA")
+                self._write1(self.Flag.LPH1RA, to_)
+                self._expect_flag(self.Flag.LPH1RA, to_)
+                
+                self._current_link_phase = self.LinkPhase.PHASE1
+            elif phase == self.LinkPhase.PHASE2:
+                assert self._current_link_phase == self.LinkPhase.PHASE1
+
+                LOG.debug("sending LPH2RA")
+                self._write1(self.Flag.LPH2RA, to_)
+                self._expect_flag(self.Flag.LPH2RA, to_)
+                
+                self._current_link_phase = self.LinkPhase.PHASE2
+            else:
+                raise ValueError("unrecognized phase value")
+
+    def close_link(self, phase, timeout=TRANSFER_TIMEOUT):
         """! @brief Send the LPH1RL or LPH2RL flag.
+        
+        Link phase 1 can be closed from any state. Link phase 2 can only be closed when the
+        connection is already in that phase.
+        
         @exception UnexpectedFlagError
         @exception TimeoutError
         """
-        if phase == self.LinkPhase.PHASE1:
-            LOG.info("sending LPH1RL")
-            self._write1(self.Flag.LPH1RL)
-            self._expect_flag(self.Flag.LPH1RL)
-        elif phase == self.LinkPhase.PHASE2:
-            LOG.info("sending LPH2RL")
-            self._write1(self.Flag.LPH2RL)
-            self._expect_flag(self.Flag.LPH2RL)
+        with Timeout(timeout) as to_:
+            if phase == self.LinkPhase.PHASE1:
+                # Link phase 1 can be closed from any state, so we don't assert here.
+                LOG.debug("sending LPH1RL")
+                self._write1(self.Flag.LPH1RL, to_)
+                self._expect_flag(self.Flag.LPH1RL, to_)
+            
+                self._current_link_phase = None
+            elif phase == self.LinkPhase.PHASE2:
+                assert self._current_link_phase == self.LinkPhase.PHASE2
+
+                LOG.debug("sending LPH2RL")
+                self._write1(self.Flag.LPH2RL, to_)
+                self._expect_flag(self.Flag.LPH2RL, to_)
+            
+                self._current_link_phase = self.LinkPhase.PHASE1
+            else:
+                raise ValueError("unrecognized phase value")
 
     def _log_status(self):
         status = self.ap.read32(self.Register.SR)
-        LOG.info("status=0x%08x", status)
+        LOG.info("status=0x%08x phase=%s", status, self._current_link_phase)
 
-    def read_protocol_id(self):
+    def read_protocol_id(self, timeout=TRANSFER_TIMEOUT):
         """! @brief Read and return the 6-byte protocol ID.
         @exception UnexpectedFlagError
+        @exception LinkClosedException
         @exception TimeoutError
         """
-        self._write1(self.Flag.IDR)
-        self._expect_flag(self.Flag.IDA)
-        return self._read_packet_data_to_end()
+        with Timeout(timeout) as to_:
+            self._write1(self.Flag.IDR, to_)
+            self._expect_flag(self.Flag.IDA, to_)
+            return self._read_packet_data_to_end(to_)
     
-    def send_reboot_request(self):
+    def send_reboot_request(self, timeout=TRANSFER_TIMEOUT):
         """! @brief Send remote reboot request."""
-        self._write1(self.Flag.LPH2RR)
+        with Timeout(timeout) as to_:
+            self._write1(self.Flag.LPH2RR, to_)
     
     def __repr__(self):
-        return "<SDC-600@{:x}: en={} txw={} rxw={}>".format(id(self),
-            self._is_enabled, self._tx_width, self._rx_width)
+        return "<SDC-600@{:x}: en={} txw={} rxw={} phase={}>".format(id(self),
+            self._is_enabled, self._tx_width, self._rx_width, self._current_link_phase)
         
 
 

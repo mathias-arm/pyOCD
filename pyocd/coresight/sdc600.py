@@ -334,12 +334,12 @@ class SDC600(CoreSightComponent):
             # Check for the packet end marker flag.
             if value == self.Flag.END:
                 break
-            # Handle other flag bytes.
+            # Handle other flag bytes. This will raise on any detected flags.
             elif (value & self.Flag.MASK) == self.Flag.IDENTIFIER:
                 self._check_flags(value, to_)
+
             # Append data bytes.
-            else:
-                result.append(value)
+            result.append(value)
         else:
             raise exceptions.TimeoutError("timeout while reading from SDC-600")
         

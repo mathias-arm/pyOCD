@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import sys
 import string
 from . import conversion
@@ -124,3 +125,16 @@ def dump_hex_data(data, start_address=0, width=8, output=None, print_ascii=True)
             output.write("   " + s)
         
         output.write("\n")
+
+def dump_hex_data_to_str(data, **kwargs):
+    """! @brief Returns a canonical hex dump of the given data.
+
+    @param data The data to print as hex. Can be a `bytes`, `bytearray`, or list of integers.
+    @param start_address Address of the first byte of the data. Defaults to 0. If set to None,
+        then the address column is not printed.
+    @param width Controls grouping of the hex bytes in the output as described above.
+    @param print_ascii Whether to include the printable ASCII column. Defaults to True.
+    """
+    sio = io.StringIO()
+    dump_hex_data(data, output=sio, **kwargs)
+    return sio.getvalue()
